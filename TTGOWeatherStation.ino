@@ -3,6 +3,8 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>     // https://github.com/bblanchon/ArduinoJson.git
 #include <ESPAsyncWebServer.h>  // https://github.com/JuniorPolegato/ESPAsyncWebServer
+#include <pins_arduino.h>
+#include <esp_adc_cal.h>
 
 #include "ESPUserConnection.h"
 #include "fs_operations.h"
@@ -15,8 +17,6 @@
 #define TFT_LIGHTBLUE 0x01E9
 #define TFT_DARKRED 0xA041
 #define TFT_BLUE 0x5D9B
-#define PIN_BUTTON1 0
-#define PIN_BUTTON2 35
 
 #define USE_STRPTIME
 
@@ -62,6 +62,20 @@ char* footer_pos;
 char* footer_end;
 char  footer_30;
 bool ap_mode = false;
+int vref = 1100;
+float full_scale = 3.3;
+float adjust_usb = 0.18;
+float adjust_bat = -0.14;
+
+void load_adjusts() {
+    String file_data = readFile("/adjusts.txt");
+    Serial.printf("load_adjusts: %s\r\n", file_data.c_str());
+    if (file_data.length() == 0)
+        return;
+    adjust_usb = strtof(file_data.c_str() + file_data.indexOf('"', file_data.indexOf(':')) + 1, NULL);
+    adjust_bat = strtof(file_data.c_str() + file_data.indexOf('"', file_data.indexOf(':', file_data.indexOf(','))) + 1, NULL);
+    Serial.printf("adjust_usb: %.2f | adjust_bat: %.2f\r\n", adjust_usb, adjust_bat);
+}
 
 void load_cities() {
     int i, d;
@@ -130,13 +144,38 @@ void custom_user_request_data(AsyncWebServerRequest *request) {
 }
 
 void append_to_webserver() {
+    webserver.on("/get_adjusts", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json",
+                        String("{\"adjust_usb\": \"") + adjust_usb + "\", \"adjust_bat\": \"" + adjust_bat + "\"}");
+    });
+
+    webserver.on("/store_adjusts", HTTP_POST, [](AsyncWebServerRequest *request) {
+        int params = request->params();
+
+        if (params == 2) {
+            String data(String("{\"adjust_usb\": \"") + request->getParam(0)->value() + "\", \"adjust_bat\": \"" + request->getParam(1)->value() + "\"}");
+
+            renameFile("/adjusts.txt", "/adjusts.txt.bak");
+            if (writeFile("/adjusts.txt", data, true))
+                deleteFile("/adjusts.txt.bak");
+            else
+                renameFile("/adjusts.txt.bak", "/cities.txt");
+
+            request->send(200, "text/html", go_back_html);
+
+            load_adjusts();
+        }
+        else
+            request->send(500);
+    });
+
     webserver.on("/list_cities", HTTP_GET, [](AsyncWebServerRequest *request) {
         int i = 0, d;
         String city, country;
 
         String file_data = readFile("/cities.txt");
 
-        String resp = "[{\"city\":\"Click here to add\",\"country\":\"BR\"}";
+        String resp = "[{\"city\":\"<strong>Click here to add</strong>\",\"country\":\"BR\"}";
         for (;;) {
             d = file_data.indexOf('\t', i);
             if (d == -1) break;
@@ -191,10 +230,67 @@ void append_to_webserver() {
     });
 }
 
+void cal_vref() {
+    esp_adc_cal_characteristics_t adc_chars;
+    esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, vref, &adc_chars);  // Check type of calibration value used to characterize ADC
+
+    Serial.printf("ADC number: %u\r\nADC attenuation: %u\r\nADC bit width: %u\r\nGradient of ADC-Voltage curve: %u\r\nOffset of ADC-Voltage curve: %u\r\n"
+                  "Vref used by lookup table: %u\r\nPointer to low Vref curve of lookup table: %u\r\nPointer to high Vref curve of lookup table: %u\r\n"
+                  "Version: %u\r\n",
+                  adc_chars.adc_num, adc_chars.atten, adc_chars.bit_width, adc_chars.coeff_a, adc_chars.coeff_a, adc_chars.vref,
+                  *adc_chars.low_curve, *adc_chars.high_curve, adc_chars.version);
+
+    switch (adc_chars.atten) {
+        case ADC_ATTEN_DB_0:
+            Serial.println("No input attenumation, ADC can measure up to approx. 800 mV.");
+            full_scale = 1.1;
+            break;
+        case ADC_ATTEN_DB_2_5:
+            Serial.println("The input voltage of ADC will be attenuated extending the range of measurement by about 2.5 dB (1.33 x).");
+            full_scale = 1.5;
+            break;
+        case ADC_ATTEN_DB_6:
+            Serial.println("The input voltage of ADC will be attenuated extending the range of measurement by about 6 dB (2 x).");
+            full_scale = 2.2;
+            break;
+        case ADC_ATTEN_DB_11:
+        default:
+            Serial.println("The input voltage of ADC will be attenuated extending the range of measurement by about 11 dB (3.55 x).");
+            full_scale = 3.3;
+            break;
+    }
+    Serial.printf("Full Scale: %.2fV\r\n", full_scale);
+
+    if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF) {
+        Serial.printf("eFuse Vref: %u mV\r\n", adc_chars.vref);
+        vref = adc_chars.vref;
+    } else if (val_type == ESP_ADC_CAL_VAL_EFUSE_TP) {
+        Serial.printf("Two Point --> coeff_a: %umV coeff_b: %umV\r\n", adc_chars.coeff_a, adc_chars.coeff_b);
+    } else {
+        Serial.printf("Default Vref: %umV\r\n", vref);
+    }
+}
+
+String get_vbat() {
+    static uint64_t timeStamp = 0;
+    static float battery_voltage = 0.0;
+
+    if (millis() - timeStamp > 1000) {
+        timeStamp = millis();
+        uint16_t v = analogRead(VBAT);
+        float current_voltage = ((float)v / 4095.0) * 2.0 * full_scale * (vref / 1000.0);
+        current_voltage += current_voltage > 4.5 ? adjust_usb : adjust_bat;
+        battery_voltage = battery_voltage < 0.1 ? current_voltage : (battery_voltage * 9.0 + current_voltage) / 10.0;
+    }
+    return String(battery_voltage) + "V";
+}
+
 void setup(void) {
     Serial.begin(115200);
-    pinMode(0,INPUT_PULLUP);
-    pinMode(35,INPUT);
+    pinMode(LEFT_BUTTON, INPUT_PULLUP);
+    pinMode(RIGHT_BUTTON, INPUT_PULLUP);
+    load_adjusts();
+    cal_vref();
 
     tft.init();
     tft.setRotation(0);
@@ -328,7 +424,7 @@ void loop() {
 #ifdef OUTPUT_IS_TFT
         tft.println("\nConnected!\n");
 #else
-        Serial.println("\nConnected!\n");
+        Serial.println("\r\nConnected!\r\n");
 #endif  // OUTPUT_IS_TFT
 
         vTaskDelete(NULL);  // Stop loop task, run just WebServer in AP mode
@@ -343,7 +439,7 @@ void loop() {
     if (x_spr == 85) dir_spr = -1;
     else if (x_spr == 0) dir_spr = 1;
 
-    if (digitalRead(PIN_BUTTON2) == 0){
+    if (digitalRead(RIGHT_BUTTON) == 0){
         if (press2 == 0) {
             press2 = 1;
             tft.fillRect(93, 216, 44, 12, TFT_BLACK);
@@ -356,7 +452,7 @@ void loop() {
     else
         press2 = 0;
 
-    if (digitalRead(PIN_BUTTON1) == 0) {
+    if (digitalRead(LEFT_BUTTON) == 0) {
         if (press1 == 0) {
             press1 = 1;
             if (++curCity == qtd_cities)
@@ -379,8 +475,8 @@ void loop() {
         footer_pos = footer;
     footer_30 = *(footer_pos + 30);
     *(footer_pos + 30) = '\0';
-    tft.println(footer_pos);
-    Serial.println(footer_pos);
+    tft.println(get_vbat() + " " + footer_pos);
+    Serial.println(get_vbat() + " " + footer_pos);
     *(footer_pos + 30) = footer_30;
 
     String _date = rtc.getTime("%a, %d %b %Y ");
@@ -429,7 +525,9 @@ bool getData() {
         HTTPClient http;
         int httpCode;
 
-        String _endpoint = endpoint + cities[curCity].city + "," + cities[curCity].country;
+        String city(cities[curCity].city);
+        city.replace(" ", "%20");
+        String _endpoint = endpoint + city + "," + cities[curCity].country;
         // Serial.println("[" + _endpoint + "]");
         http.begin(_endpoint);
         const char *headerKeys[] = {"Date"};
@@ -523,7 +621,7 @@ bool getData() {
 
         }
         else {
-            Serial.println("Error on\nHTTP OpenWeather\nrequest [" + String(httpCode) + "]");
+            Serial.println("Error on\r\nHTTP OpenWeather\r\nrequest [" + String(httpCode) + "]");
             return false;
         }
 
@@ -534,13 +632,13 @@ bool getData() {
         return false;
     }
 
-    Serial.println("_____________________________________________________________\n");
+    Serial.println("_____________________________________________________________\r\n");
     Serial.println("City: [" + String(curCity) + "] " + cities[curCity].city + ", " + cities[curCity].country);
     Serial.println("Date and time: " + rtc.getDateTime());
     Serial.println("Temperature: " + curTemperature);
     Serial.println("Humidity: " + curHumidity);
     Serial.println("Icon: " + icon);
-    Serial.println("_____________________________________________________________\n");
+    Serial.println("_____________________________________________________________\r\n");
     return true;
 }
 

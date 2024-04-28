@@ -17,7 +17,7 @@
 #define TFT_TEXT_COLOR TFT_YELLOW
 
 // Uncomment this to see the IP to connect to on Bluetooh name
-// #define IP_ON_BLUETOOTH_NAME
+#define IP_ON_BLUETOOTH_NAME "Weather Station"
 
 #ifdef CUSTOM_USER_REQUEST_DATA
 const char sendfiles_html[] PROGMEM = R"===(

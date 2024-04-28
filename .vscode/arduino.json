@@ -1,7 +1,7 @@
 {
-    "board": "esp32:esp32:ttgo-lora32",
+    "board": "esp32:esp32:lilygo_t_display",
     "port": "/dev/ttyUSB0",
     "output": "../build/TTGOWeatherStation",
     "sketch": "TTGOWeatherStation.ino",
-    "configuration": "Revision=TTGO_LoRa32_V1,FlashFreq=80,UploadSpeed=921600,DebugLevel=none,EraseFlash=none"
+    "configuration": "PSRAM=disabled,LoopCore=1,EventsCore=1,PartitionScheme=no_ota,CPUFreq=240,FlashMode=qio,FlashFreq=80,FlashSize=4M,UploadSpeed=921600,DebugLevel=none,EraseFlash=all"
 }

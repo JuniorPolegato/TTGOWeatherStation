@@ -18,9 +18,22 @@ I got the original code for study, I organized it and many new features!
 
 5. Install library ArduinoJson from interface tools.
 
-6. Get your free API Key from https://openweathermap.org/.
+6. Update your ~/.arduino15/packages/esp32/hardware/esp32/2.0.14/boards.txt, where 2.0.14 is esp32 library version, about line 3425, with:
 
-~7. Put your Wi-Fi name and password, plus your key that you got above:~
+    ```
+    lilygo_t_display.upload.flags=
+    lilygo_t_display.upload.extra_fl
+    lilygo_t_display.menu.PartitionScheme.default_16mb=16 MB SPIFFS (6.25MB APP/OTA/3.43MB SPIFFS)
+    lilygo_t_display.menu.PartitionScheme.default_16mb.build.partitions=default_16MB
+    lilygo_t_display.menu.PartitionScheme.default_16mb.upload.maximum_size=6553600
+    lilygo_t_display.menu.PartitionScheme.large_spiffs=16 MB Large SPIFFS (4.5MB APP/OTA/6.93MB SPIFFS)
+    lilygo_t_display.menu.PartitionScheme.large_spiffs.build.partitions=large_spiffs_16MB
+    lilygo_t_display.menu.PartitionScheme.large_spiffs.upload.maximum_size=4718592
+    ```
+
+7. Get your free API Key from https://openweathermap.org/.
+
+~8. Put your Wi-Fi name and password, plus your key that you got above:~
 ~|Name|Description|~
 ~|----|-----------|~
 ~|ssid|Name of the WiFi network|~
@@ -28,7 +41,7 @@ I got the original code for study, I organized it and many new features!
 ~|key|Open Weather API key|~
 
 
-7. Now you can select many WiFi networks via web browser, and the cities too. I integrated the project [ESPUserConnection](https://github.com/JuniorPolegato/ESPUserConnection) of my own into this project. At first boot, you need to connect to ESP AP, access via web browser http://<esp_ap_ip>/wifi, upload files requested, them you can select your WiFi, enter password and your personal Open Weather key, reboot, then access http://<esp_wlan_ip> to manager cities, see bellow:
+8. Now you can select many WiFi networks via web browser, and the cities too. I integrated the project [ESPUserConnection](https://github.com/JuniorPolegato/ESPUserConnection) of my own into this project. At first boot, you need to connect to ESP AP, access via web browser http://<esp_ap_ip>/wifi, upload files requested, them you can select your WiFi, enter password and your personal Open Weather key, reboot, then access http://<esp_wlan_ip> to manager cities, see bellow:
 
 ![wifi_list.png](https://raw.githubusercontent.com/JuniorPolegato/TTGOWeatherStation/main/assets/wifi_list.png)
 ![cities_list.png](https://raw.githubusercontent.com/JuniorPolegato/TTGOWeatherStation/main/assets/cities_list.png)

@@ -184,6 +184,30 @@
             </tbody>
         </table>
     </div>
+    <div class="container">
+        <table class="wf_row">
+            <thead>
+                <tr>
+                    <th scope="col">
+                        <p>Configuration</p>
+                    </th>
+                    <th scope="col">
+                        <p>Value</p>
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Adjust USB 5V</td>
+                    <td><input type="number" name="adjust_usb" id="_adjust_usb" value="NaN" step=".01" style="width: 60px; text-align: right;"></td>
+                </tr>
+                <tr>
+                    <td>Adjust Bat 3.7V</td>
+                    <td><input type="number" name="adjust_bat" id="_adjust_bat" value="NaN" step=".01"  style="width: 60px; text-align: right;"></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
     <div>
         <h3>&nbsp;</h3>
         <h3><a href="/wifi">WiFi &amp; OpenWeather key configurations</a></h3>
@@ -213,6 +237,46 @@
                 el.setAttribute("style", "display: none");
             }
 
+        }
+
+        function storeAdjusts(tr) {
+            let xhr = new XMLHttpRequest();
+
+            let tbody = tr.parentNode;
+            let adjust_usb = tbody.children[0].children[1].children[0].value;
+            let adjust_bat = tbody.children[1].children[1].children[0].value;
+            let data = `adjust_usb=${adjust_usb}&adjust_bat=${adjust_bat}`;
+
+            console.log(data);
+            xhr.open("POST", "/store_adjusts", true);
+            xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            xhr.send(data);
+        }
+
+        function loadAdjusts() {
+            let xhr = new XMLHttpRequest();
+
+            xhr.open('GET', "/get_adjusts", true);
+            xhr.onload = function (e) {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        if (xhr.responseText == "{}" || xhr.responseText == undefined)
+                            return;
+
+                        let json = xhr.responseText;
+                        json = JSON.parse(json);
+
+                        let tbody = document.getElementsByTagName("tbody")[1];
+                        tbody.children[0].children[1].children[0].value = json.adjust_usb;
+                        tbody.children[1].children[1].children[0].value = json.adjust_bat;
+                    }
+                }
+            }
+            xhr.onerror = function (e) {
+                console.log("error");
+                console.log(e);
+            };
+            xhr.send(null);
         }
 
         function configPP(city, country) {
@@ -256,12 +320,13 @@
             setTimeout(() => {location.reload(); }, 1000);
         }
 
-        function getContent(url) {
+        function getContent() {
             let xhr = new XMLHttpRequest();
             let list = "";
             let security=4;
             let security_code="WPA/WPA2";
             let tbody = document.querySelector("tbody");
+            let url = "/list_cities";
 
             console.log(`Get from ${url}`);
             tbody.innerHTML = "";
@@ -289,6 +354,10 @@
 
                 trs.forEach(function(tr) {
                     tr.addEventListener("click", () => {
+                        if (tr.children[1].innerHTML.startsWith('<input')) {
+                            storeAdjusts(tr);
+                            return;
+                        }
                         configPP(tr.children[0].innerHTML.trim().replaceAll("\n", ""),
                                  tr.children[1].innerHTML.trim().replaceAll("\n", ""));
                     });
@@ -333,7 +402,8 @@
             document.querySelector(".overlay").addEventListener("click", () =>  {
                 configPP();
             });
-            setTimeout(getContent("/list_cities"), 100);
+            setTimeout(getContent, 250);
+            setTimeout(loadAdjusts, 100);
         }
 
     </script>

@@ -163,7 +163,7 @@ void start_AP() {
 
 #ifdef IP_ON_BLUETOOTH_NAME
     SerialBT.end();
-    SerialBT.begin("ESP32 " + ip.toString());
+    SerialBT.begin(IP_ON_BLUETOOTH_NAME + String(" ") + ip.toString());
 #endif
 
     delay(1000);
@@ -292,7 +292,7 @@ bool connect_wifi(bool force_ap_mode, bool show_connected_ip){
 
 #ifdef IP_ON_BLUETOOTH_NAME
     SerialBT.end();
-    SerialBT.begin("ESP32 " + WiFi.localIP().toString());
+    SerialBT.begin(IP_ON_BLUETOOTH_NAME + String(" ") + WiFi.localIP().toString());
 #endif
 
     webserver.begin();
