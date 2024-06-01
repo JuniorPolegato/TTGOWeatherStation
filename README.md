@@ -22,7 +22,7 @@ I got the original code for study, I organized it and many new features!
 
     ```
     lilygo_t_display.upload.flags=
-    lilygo_t_display.upload.extra_fl
+    lilygo_t_display.upload.extra_flags=
     lilygo_t_display.menu.PartitionScheme.default_16mb=16 MB SPIFFS (6.25MB APP/OTA/3.43MB SPIFFS)
     lilygo_t_display.menu.PartitionScheme.default_16mb.build.partitions=default_16MB
     lilygo_t_display.menu.PartitionScheme.default_16mb.upload.maximum_size=6553600
