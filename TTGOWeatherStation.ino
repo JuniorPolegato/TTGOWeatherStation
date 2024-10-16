@@ -129,7 +129,7 @@ void custom_user_request_data(AsyncWebServerRequest *request) {
     int params = request->params();
 
     if (params >= 3) {
-        String key = request->getParam(2)->value();
+        String key = request->getParam(2U)->value();
 
         if (key.length() == 32)
             writeFile("/key.txt", key, true);
@@ -153,7 +153,7 @@ void append_to_webserver() {
         int params = request->params();
 
         if (params == 2) {
-            String data(String("{\"adjust_usb\": \"") + request->getParam(0)->value() + "\", \"adjust_bat\": \"" + request->getParam(1)->value() + "\"}");
+            String data(String("{\"adjust_usb\": \"") + request->getParam(0U)->value() + "\", \"adjust_bat\": \"" + request->getParam(1U)->value() + "\"}");
 
             renameFile("/adjusts.txt", "/adjusts.txt.bak");
             if (writeFile("/adjusts.txt", data, true))
@@ -194,9 +194,9 @@ void append_to_webserver() {
         int params = request->params();
 
         if (params == 3) {
-            String city = request->getParam(0)->value();
-            String country = request->getParam(1)->value();
-            String operation = request->getParam(2)->value();
+            String city = request->getParam(0U)->value();
+            String country = request->getParam(1U)->value();
+            String operation = request->getParam(2U)->value();
             int i = -1, n;
 
             if (operation != "add" && operation != "delete") {
@@ -303,9 +303,14 @@ void setup(void) {
     spr.createSprite(50, 50);
     spr.setSwapBytes(true);
 
+#if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
     ledcSetup(pwmLedChannelTFT, pwmFreq, pwmResolution);
     ledcAttachPin(TFT_BL, pwmLedChannelTFT);
     ledcWrite(pwmLedChannelTFT, backlight[curBright]);
+#else
+    ledcAttach(TFT_BL, pwmFreq, pwmResolution);
+    ledcWrite(TFT_BL, backlight[curBright]);
+#endif
 
     // Wi-Fi connection
 
@@ -446,7 +451,11 @@ void loop() {
             if(++curBright == 5) curBright = 0;
             for(int i = 0; i <= curBright; i++)
                 tft.fillRect(93 + (i * 7), 216, 3, 10, TFT_BLUE);
+#if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
             ledcWrite(pwmLedChannelTFT, backlight[curBright]);
+#else
+            ledcWrite(TFT_BL, backlight[curBright]);
+#endif
         }
     }
     else

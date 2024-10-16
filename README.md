@@ -61,7 +61,7 @@ I got the original code for study, I organized it and many new features!
 - Font editor, see [Adafruit-GFX-font-editor](https://github.com/JuniorPolegato/Adafruit-GFX-font-editor)
 - Image converter, see [image-to-rgb565](https://github.com/JuniorPolegato/image-to-rgb565)
 - Connect your WiFi via web browser, see [ESPUserConnection](https://github.com/JuniorPolegato/ESPUserConnection)
-- Manager Citeis via web browser, a extension easy to implement from [ESPUserConnection](https://github.com/JuniorPolegato/ESPUserConnection)
+- Manager Cities via web browser, a extension easy to implement from [ESPUserConnection](https://github.com/JuniorPolegato/ESPUserConnection)
 
 ## Work description
 

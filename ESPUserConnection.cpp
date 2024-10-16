@@ -20,8 +20,8 @@ void user_request_data(AsyncWebServerRequest *request, bool restart=true) {
     int params = request->params();
 
     if (params >= 2) {
-        String ssid = request->getParam(0)->value();
-        String passwd = request->getParam(1)->value();
+        String ssid = request->getParam(0U)->value();
+        String passwd = request->getParam(1U)->value();
         int i = -1, n;
 
         if (passwd.length() > 0) {
