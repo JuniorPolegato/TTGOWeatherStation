@@ -10,6 +10,7 @@
 
 AsyncWebServer webserver(80);
 bool webserver_configured = false;
+size_t total_size = 0;
 
 // This is an example to request also a key to the user via html page
 #ifdef CUSTOM_USER_REQUEST_DATA
@@ -120,23 +121,27 @@ String scan(){
 }
 
 void upload_handler(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
-    PRINTLN(filename + '[' + len + ']');
-
     if (!index) {
         String filepath = filename;
-
         if (!filename.startsWith("/"))
-            filepath = "/" + filename;
+            filepath = '/' + filename;
 
         request->_tempFile = LittleFS.open(filepath, FILE_WRITE);
+
+        clear();
+        PRINTLN("Uploading file:\n" + filename);
     }
 
-    if (len)
+    if (len) {
+        total_size += len;
         request->_tempFile.write(data, len);
+        PRINTLN(filename + '\n' + len + ' ' + total_size);
+    }
 
     if (final) {
         request->_tempFile.close();
-        request->send(200, "text/html", go_back_html);
+        PRINTLN("Finished!\n");
+        total_size = 0;
     }
 }
 
@@ -155,11 +160,12 @@ void start_AP() {
 
     webserver.begin();
     PRINTLN("Then access:\n\n"
-                  "http://" + ip.toString() + "/wifi\n\n"
-                  "and select Wi-Fi\n"
-                  "network for your\n"
-                  + String(PROJECT_NAME) + "\n\n"
-                  "Waiting for you...\n");
+            "http://\n"
+            + ip.toString() + "/wifi\n\n"
+            "and select Wi-Fi\n"
+            "network for your\n"
+            + String(PROJECT_NAME) + "\n\n"
+            "Waiting for you...\n");
 
 #ifdef IP_ON_BLUETOOTH_NAME
     SerialBT.end();
@@ -171,10 +177,11 @@ void start_AP() {
 
 void config_webserver() {
     webserver.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+        clear();
         if (findFile("/index.html"))
             request->send(LittleFS, "/index.html", "text/html");
         else {
-            PRINTLN("Send \"index.html\" file!");
+            PRINTLN("Please, send the\nHTML files!\n");
             request->send(200, "text/html", sendfiles_html);
         }
     });
@@ -220,9 +227,8 @@ void config_webserver() {
     });
 
     webserver.on("/send_file", HTTP_POST, [](AsyncWebServerRequest *request) {
-        clear();
-        PRINTLN("Uploading the file...");
-        request->send(200);
+        PRINTLN("\nReady to send a file again!");
+        request->send(200, "text/html", sendfiles_html);
     }, upload_handler);
 
     // Here you can add your custom endpoints

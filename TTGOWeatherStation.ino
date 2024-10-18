@@ -57,7 +57,7 @@ int frame = 0;
 int x_spr = 0;
 int dir_spr = 1;
 String ipinfo_io;
-char* footer;
+char* footer = NULL;
 char* footer_pos;
 char* footer_end;
 char  footer_30;
@@ -741,7 +741,10 @@ void updateFooter(String extraInfo) {
     String _footer = extraInfo + ipinfo_io;
     int _length = _footer.length();
     _footer += _footer.substring(0, 30);
+
+    if (footer) free(footer);
     footer = (char*) malloc(_footer.length() + 1);
+
     strcpy(footer, _footer.c_str());
     footer_end = footer + _length ;
     footer_pos = footer;
