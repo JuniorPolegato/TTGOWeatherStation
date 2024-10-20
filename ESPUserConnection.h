@@ -17,7 +17,7 @@
 #define TFT_TEXT_COLOR TFT_YELLOW
 
 // Uncomment this to see the IP to connect to on Bluetooh name
-#define IP_ON_BLUETOOTH_NAME "Weather Station"
+//#define IP_ON_BLUETOOTH_NAME "Weather Station"
 
 #ifdef CUSTOM_USER_REQUEST_DATA
 const char sendfiles_html[] PROGMEM = R"===(
@@ -29,7 +29,7 @@ const char sendfiles_html[] PROGMEM = R"===(
     <title>TTGO Weather Station - by Junior Polegato</title>
 </head>
 <body>
-    <h1>TTGO Weather Station - by Junior Polegato</h1>
+    <h1><a href="/">TTGO Weather Station - by Junior Polegato</a></h1>
     <h2>Select and send files to TTGO Weather Station board<h2>
     <h3>Please, pay attention! You can destroy data and crash your Weather Station.<h3>
     <form action="/send_file" method="POST" enctype="multipart/form-data">

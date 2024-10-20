@@ -2,6 +2,17 @@
 
 I got the original code for study, I organized it and many new features!
 
+New on 20-oct-2024:
+1. Bluetooth disabled for a smaller sketch and power saving, it was just used to advertise IP;
+2. Press and hold the left button to swap the city name with the IP, release to restore;
+3. Press and hold the right button to sleep;
+4. During sleep, press the right button to wake up;
+5. Timeout to switch cities;
+6. Sleep timeout;
+7. Wake up timeout;
+8. Access the IP in your web browser on the same network to set timeouts, set to zero to disable it;
+9. At first time, access the AP IP and upload the files from [files_to_upload](https://github.com/JuniorPolegato/TTGOWeatherStation/tree/main/files_to_upload) folder, then configure your Wi-Fi.
+
 ![Weather Station by Junior Polegato](https://raw.githubusercontent.com/JuniorPolegato/TTGOWeatherStation/main/assets/TTGOWeatherStation.jpg)
 [REPO](https://github.com/JuniorPolegato/TTGOWeatherStation)
 

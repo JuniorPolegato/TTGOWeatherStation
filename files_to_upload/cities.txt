@@ -5,6 +5,7 @@ Cafelândia	BR
 Monções	BR
 Paris	FR
 Madrid	ES
+Dublin	IE
 New York	US
 Brasília	BR
 Cuiabá	BR

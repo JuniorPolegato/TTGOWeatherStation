@@ -1,6 +1,6 @@
 #include "fs_operations.h"
 
-bool writeFile(String path, String data, const bool overwrite) {
+bool writeFile(String path, String data, const bool binary, const bool overwrite) {
     char *mode = FILE_WRITE;
     bool create = true;
 
@@ -15,7 +15,7 @@ bool writeFile(String path, String data, const bool overwrite) {
 
     File file = LittleFS.open(path, mode, create);
 
-    if (!data.endsWith("\n"))
+    if (!binary && !data.endsWith("\n"))
         data += '\n';
 
     create = file.print(data) == data.length();
@@ -25,17 +25,29 @@ bool writeFile(String path, String data, const bool overwrite) {
     return create;
 }
 
-String readFile(String path) {
+String readFile(String path, const bool binary) {
     File file;
     String data;
 
     if (!LittleFS.begin(true))
         return "";
 
-     if (!(file = LittleFS.open(path)))
+    if (!(file = LittleFS.open(path)))
         return "";
 
-    data = file.readString();
+    if (binary) {
+        bool success = false;
+        char* buf;
+        size_t size;
+        buf = (char*)malloc(file.size());
+        size = file.readBytes(buf, file.size());
+        success = size == file.size();
+        if (success)
+            data.concat(buf, size);
+        free(buf);
+    }
+    else
+        data = file.readString();
     file.close();
     return data;
 }

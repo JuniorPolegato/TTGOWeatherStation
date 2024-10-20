@@ -20,6 +20,13 @@
 
 #define USE_STRPTIME
 
+#define BUTTON_PIN_BITMASK(RTC_GPIO) (1ULL << RTC_GPIO)  // RTC GPIO: 0,2,4,12-15,25-27,32-39
+
+RTC_DATA_ATTR int bootCount = 0;
+RTC_DATA_ATTR int curCity = 0;
+RTC_DATA_ATTR int loopCount = 0;
+RTC_DATA_ATTR byte curBright = 1;
+
 typedef struct {
     String city;
     String country;
@@ -47,10 +54,7 @@ String curTime = "";
 String curSeconds = "";
 String curTemperature = "";
 String curHumidity = "";
-byte curBright = 1;
 int curTimezone = 0;
-int curCity = 0;
-int loopCount = 0;
 int press1 = 0;
 int press2 = 0;
 int frame = 0;
@@ -66,15 +70,45 @@ int vref = 1100;
 float full_scale = 3.3;
 float adjust_usb = 0.18;
 float adjust_bat = -0.14;
+uint32_t switch_millis = 0;
+uint32_t sleep_millis = 0;
+uint32_t time_to_switch_city = 5;  // 5 seconds default
+uint32_t time_to_sleep =  2;       // 2 minutes default
+uint32_t time_to_wakeup = 1;       // 1 minutes default
+
 
 void load_adjusts() {
     String file_data = readFile("/adjusts.txt");
-    Serial.printf("load_adjusts: %s\r\n", file_data.c_str());
-    if (file_data.length() == 0)
-        return;
-    adjust_usb = strtof(file_data.c_str() + file_data.indexOf('"', file_data.indexOf(':')) + 1, NULL);
-    adjust_bat = strtof(file_data.c_str() + file_data.indexOf('"', file_data.indexOf(':', file_data.indexOf(','))) + 1, NULL);
-    Serial.printf("adjust_usb: %.2f | adjust_bat: %.2f\r\n", adjust_usb, adjust_bat);
+
+    Serial.print("------------ Adjusts ------------ ");
+
+    if (file_data.length()) {
+        Serial.println("Ok");
+        JsonDocument doc;
+        deserializeJson(doc, file_data);
+        if (!doc["adjust_usb"].isNull()) adjust_usb = doc["adjust_usb"];
+        if (!doc["adjust_bat"].isNull()) adjust_bat = doc["adjust_bat"];
+        if (!doc["time_to_switch_city"].isNull()) time_to_switch_city = doc["time_to_switch_city"];
+        if (!doc["time_to_sleep"].isNull()) time_to_sleep = doc["time_to_sleep"];
+        if (!doc["time_to_wakeup"].isNull()) time_to_wakeup = doc["time_to_wakeup"];
+    }
+
+    else {
+        Serial.println("Failed");
+        Serial.println(file_data);
+    }
+
+    Serial.print("adjust_usb.......:");
+    Serial.println(adjust_usb);
+    Serial.print("adjust_bat.......:");
+    Serial.println(adjust_bat);
+    Serial.print("time_to_switch_city: ");
+    Serial.println(time_to_switch_city);
+    Serial.print("time_to_sleep....:");
+    Serial.println(time_to_sleep);
+    Serial.print("time_to_wakeup...:");
+    Serial.println(time_to_wakeup);
+    Serial.println("---------------------------------");
 }
 
 void load_cities() {
@@ -107,17 +141,20 @@ void load_cities() {
         Serial.println(c->city + " - " + c->country);
         c++;
     }
-    curCity = 0;
 }
 
-void update_city() {
+void update_city(bool swap = true, bool ip=false) {
+    String text;
+    if (swap && !ip && ++curCity == qtd_cities)
+        curCity = 0;
     tft.fillRect(0, 60, 135, 27, TFT_BLACK);
     tft.setCursor(6, 82);
     tft.setFreeFont(&Orbitron_Medium_20);
-    if (tft.textWidth(cities[curCity].city) > tft.width() - 12)
+    text = ip && !swap ? WiFi.localIP().toString() : cities[curCity].city;
+    if (tft.textWidth(text) > tft.width() - 12)
         tft.setFreeFont(&Orbitron_Bold_14);
-    tft.println(cities[curCity].city);
-    loopCount = 3000;  // force to getData for current city
+    tft.println(text);
+    loopCount += ip ? 0 : 3000;  // force to getData for current city
 }
 
 // Customizations from ESPUserConnection.cpp
@@ -132,7 +169,7 @@ void custom_user_request_data(AsyncWebServerRequest *request) {
         String key = request->getParam(2U)->value();
 
         if (key.length() == 32)
-            writeFile("/key.txt", key, true);
+            writeFile("/key.txt", key, false, true);
 
         else if (key == "delete")
             deleteFile("/key.txt");
@@ -145,21 +182,35 @@ void custom_user_request_data(AsyncWebServerRequest *request) {
 
 void append_to_webserver() {
     webserver.on("/get_adjusts", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "application/json",
-                        String("{\"adjust_usb\": \"") + adjust_usb + "\", \"adjust_bat\": \"" + adjust_bat + "\"}");
+        JsonDocument doc;
+        String file_data;
+        doc["adjust_usb"] = adjust_usb;
+        doc["adjust_bat"] = adjust_bat;
+        doc["time_to_switch_city"] = time_to_switch_city;
+        doc["time_to_sleep"] = time_to_sleep;
+        doc["time_to_wakeup"] = time_to_wakeup;
+        serializeJson(doc, file_data);
+        request->send(200, "application/json", file_data);
     });
 
     webserver.on("/store_adjusts", HTTP_POST, [](AsyncWebServerRequest *request) {
         int params = request->params();
 
-        if (params == 2) {
-            String data(String("{\"adjust_usb\": \"") + request->getParam(0U)->value() + "\", \"adjust_bat\": \"" + request->getParam(1U)->value() + "\"}");
+        if (params == 5) {
+            JsonDocument doc;
+            String file_data;
+            doc["adjust_usb"] = request->getParam(0U)->value();
+            doc["adjust_bat"] = request->getParam(1U)->value();
+            doc["time_to_switch_city"] = request->getParam(2U)->value();
+            doc["time_to_sleep"] = request->getParam(3U)->value();
+            doc["time_to_wakeup"] = request->getParam(4U)->value();
+            serializeJson(doc, file_data);
 
             renameFile("/adjusts.txt", "/adjusts.txt.bak");
-            if (writeFile("/adjusts.txt", data, true))
+            if (writeFile("/adjusts.txt", file_data, false, true))
                 deleteFile("/adjusts.txt.bak");
             else
-                renameFile("/adjusts.txt.bak", "/cities.txt");
+                renameFile("/adjusts.txt.bak", "/adjusts.txt");
 
             request->send(200, "text/html", go_back_html);
 
@@ -172,22 +223,25 @@ void append_to_webserver() {
     webserver.on("/list_cities", HTTP_GET, [](AsyncWebServerRequest *request) {
         int i = 0, d;
         String city, country;
-
+        JsonDocument doc;
         String file_data = readFile("/cities.txt");
 
-        String resp = "[{\"city\":\"<strong>Click here to add</strong>\",\"country\":\"BR\"}";
-        for (;;) {
+        doc[0]["city"] = "<strong>Click here to add</strong>";
+        doc[0]["country"] = "BR";
+
+        for (int n = 1; ; n++) {
             d = file_data.indexOf('\t', i);
             if (d == -1) break;
             city = file_data.substring(i, d++);
             i = file_data.indexOf('\n', d);
             if (i == -1) break;
             country = file_data.substring(d, i++);
-            resp += ",{\"city\":\"" + city + "\","
-                    "\"country\":\"" + country + "\"}";
+            doc[n]["city"] = city;
+            doc[n]["country"] = country;
         }
 
-        request->send(200, "application/json", resp + ']');
+        serializeJson(doc, file_data);
+        request->send(200, "application/json", file_data);
     });
 
     webserver.on("/config_cities", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -215,7 +269,7 @@ void append_to_webserver() {
             if (operation == "add")
                 file_data = line + file_data;
 
-            if (writeFile("/cities.txt", file_data, true))
+            if (writeFile("/cities.txt", file_data, false, true))
                 deleteFile("/cities.txt.bak");
             else
                 renameFile("/cities.txt.bak", "/cities.txt");
@@ -223,10 +277,15 @@ void append_to_webserver() {
             request->send(200, "text/html", go_back_html);
 
             load_cities();
-            update_city();
+            update_city(false);
         }
         else
             request->send(500);
+    });
+
+    webserver.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String img = readFile("/favicon.ico", true);
+        request->send(200, "image/png", (const uint8_t*)img.c_str(), img.length());
     });
 }
 
@@ -272,7 +331,7 @@ void cal_vref() {
 }
 
 String get_vbat() {
-    static uint64_t timeStamp = 0;
+    static unsigned long timeStamp = 0;
     static float battery_voltage = 0.0;
 
     if (millis() - timeStamp > 1000) {
@@ -287,6 +346,9 @@ String get_vbat() {
 
 void setup(void) {
     Serial.begin(115200);
+    while (!Serial);
+    print_wakeup_reason();
+
     pinMode(LEFT_BUTTON, INPUT_PULLUP);
     pinMode(RIGHT_BUTTON, INPUT_PULLUP);
     load_adjusts();
@@ -315,9 +377,9 @@ void setup(void) {
     // Wi-Fi connection
 
 #ifdef OUTPUT_IS_TFT
-    if (!connect_wifi(&tft, ap_mode)){
+    if (!connect_wifi(&tft, ap_mode)) {
 #else
-    if (!connect_wifi(ap_mode)){
+    if (!connect_wifi(ap_mode)) {
 #endif  // OUTPUT_IS_TFT
         ap_mode = true;
         return;
@@ -410,6 +472,9 @@ void setup(void) {
     }
     if (!key.length())
         setup();
+
+    switch_millis = millis();
+    sleep_millis = switch_millis;
 }
 
 void loop() {
@@ -444,9 +509,21 @@ void loop() {
     if (x_spr == 85) dir_spr = -1;
     else if (x_spr == 0) dir_spr = 1;
 
-    if (digitalRead(RIGHT_BUTTON) == 0){
-        if (press2 == 0) {
-            press2 = 1;
+    if (digitalRead(RIGHT_BUTTON) == 0) {
+        sleep_millis = millis();
+        if (press2 < 5)
+            press2++;
+        else if (press2 == 5) {  // turn off back light of TFT
+            press2++;
+#if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+            ledcWrite(pwmLedChannelTFT, 0);
+#else
+            ledcWrite(TFT_BL, 0);
+#endif
+        }
+    }
+    else if (press2 > 0) {
+        if (press2 < 5) {
             tft.fillRect(93, 216, 44, 12, TFT_BLACK);
             if(++curBright == 5) curBright = 0;
             for(int i = 0; i <= curBright; i++)
@@ -457,20 +534,27 @@ void loop() {
             ledcWrite(TFT_BL, backlight[curBright]);
 #endif
         }
-    }
-    else
+        else
+            goto_sleep();
         press2 = 0;
+    }
 
     if (digitalRead(LEFT_BUTTON) == 0) {
-        if (press1 == 0) {
-            press1 = 1;
-            if (++curCity == qtd_cities)
-                curCity = 0;
-            update_city();
+        sleep_millis = millis();
+        if (press1 < 5)
+            press1++;
+        else if (press1 == 5) {
+            update_city(false, true);  // show IP
+            press1++;
         }
     }
-    else
+    else if (press1 > 0) {
+        if (press1 < 5)
+            update_city();  // swap city
+        else
+            update_city(true, true);  // swap IP by city
         press1 = 0;
+    }
 
     if (++loopCount > 3000) {  /// about 5 minutes
         while (!getData())
@@ -485,7 +569,7 @@ void loop() {
     footer_30 = *(footer_pos + 30);
     *(footer_pos + 30) = '\0';
     tft.println(get_vbat() + " " + footer_pos);
-    Serial.println(get_vbat() + " " + footer_pos);
+    // Serial.println(get_vbat() + " " + footer_pos);
     *(footer_pos + 30) = footer_30;
 
     String _date = rtc.getTime("%a, %d %b %Y ");
@@ -525,6 +609,12 @@ void loop() {
         tft.println(curSeconds);
     }
 
+    if (time_to_switch_city > 0 && millis() - switch_millis > time_to_switch_city * 1000)
+        update_city();
+
+    if (time_to_sleep > 0 && millis() - sleep_millis > time_to_sleep * 60000)
+        goto_sleep();
+
     delay(200);
 }
 
@@ -546,8 +636,8 @@ bool getData() {
 
         if (httpCode == 200) {  // Check for the returning code
             String payload = http.getString();
-            StaticJsonDocument<1000> doc;
-            deserializeJson(doc, payload.c_str());
+            JsonDocument doc;
+            deserializeJson(doc, payload);
 
             String _lon = doc["coord"]["lon"];
             String _lat = doc["coord"]["lat"];
@@ -648,6 +738,9 @@ bool getData() {
     Serial.println("Humidity: " + curHumidity);
     Serial.println("Icon: " + icon);
     Serial.println("_____________________________________________________________\r\n");
+    switch_millis = millis();
+    Serial.print("Waiting " + String(time_to_switch_city) + " seconds...");
+    Serial.println("  |  About " + String(time_to_sleep - (millis() - sleep_millis) / 60000.) + " minutes to sleep...");
     return true;
 }
 
@@ -670,7 +763,7 @@ int numberOfMonth(const char* month) {
 }
 #endif // !USE_STRPTIME
 
-void setRtcTime(String date_string){
+void setRtcTime(String date_string) {
 #ifdef USE_STRPTIME
     struct tm t;
     strptime(date_string.c_str(), "%a, %d %b %Y %H:%M:%S GMT", &t);
@@ -748,4 +841,47 @@ void updateFooter(String extraInfo) {
     strcpy(footer, _footer.c_str());
     footer_end = footer + _length ;
     footer_pos = footer;
+}
+
+void print_wakeup_reason() {
+    esp_sleep_wakeup_cause_t wakeup_reason;
+
+    Serial.println("Boot number: " + String(++bootCount));
+
+    wakeup_reason = esp_sleep_get_wakeup_cause();
+
+    switch(wakeup_reason) {
+        case ESP_SLEEP_WAKEUP_EXT0:
+            Serial.println("Wakeup caused by external signal using RTC_IO");
+            break;
+        case ESP_SLEEP_WAKEUP_EXT1:
+            Serial.println("Wakeup caused by external signal using RTC_CNTL");
+            break;
+        case ESP_SLEEP_WAKEUP_TIMER:
+            Serial.println("Wakeup caused by timer");
+            break;
+        case ESP_SLEEP_WAKEUP_TOUCHPAD:
+            Serial.println("Wakeup caused by touchpad");
+            break;
+        case ESP_SLEEP_WAKEUP_ULP:
+            Serial.println("Wakeup caused by ULP program");
+            break;
+        default:
+            Serial.println("Wakeup was not caused by deep sleep: " + String(wakeup_reason));
+            break;
+    }
+}
+
+void goto_sleep() {
+    Serial.println("I am going to sleep!");
+
+    if (time_to_wakeup > 0) {
+        Serial.println("I will wake up in " + String(time_to_wakeup) + " minutes...");
+        esp_sleep_enable_timer_wakeup(time_to_wakeup * 60000000);
+    }
+
+    Serial.println("Press right button to wake me up...");
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_35, 0);
+
+    esp_deep_sleep_start();
 }

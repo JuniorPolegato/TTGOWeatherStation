@@ -199,11 +199,23 @@
             <tbody>
                 <tr>
                     <td>Adjust USB 5V</td>
-                    <td><input type="number" name="adjust_usb" id="_adjust_usb" value="NaN" step=".01" style="width: 60px; text-align: right;"></td>
+                    <td><input type="number" name="adjust_usb" id="_adjust_usb" value="NaN" step=".01" style="width: 60px; text-align: right;" onChange="storeAdjusts(this.parentElement.parentElement);"></td>
                 </tr>
                 <tr>
                     <td>Adjust Bat 3.7V</td>
-                    <td><input type="number" name="adjust_bat" id="_adjust_bat" value="NaN" step=".01"  style="width: 60px; text-align: right;"></td>
+                    <td><input type="number" name="adjust_bat" id="_adjust_bat" value="NaN" step=".01"  style="width: 60px; text-align: right;" onChange="storeAdjusts(this.parentElement.parentElement);"></td>
+                </tr>
+                <tr>
+                    <td>Time to swap city (s)</td>
+                    <td><input type="number" name="time_to_switch_city" id="_time_to_switch_city" value="NaN" step="1"  style="width: 60px; text-align: right;" onChange="storeAdjusts(this.parentElement.parentElement);"></td>
+                </tr>
+                <tr>
+                    <td>Time to sleep (min)</td>
+                    <td><input type="number" name="time_to_sleep" id="_time_to_sleep" value="NaN" step="1"  style="width: 60px; text-align: right;" onChange="storeAdjusts(this.parentElement.parentElement);"></td>
+                </tr>
+                <tr>
+                    <td>Time to wakeup (min)</td>
+                    <td><input type="number" name="time_to_wakeup" id="_time_to_wakeup" value="NaN" step="1"  style="width: 60px; text-align: right;" onChange="storeAdjusts(this.parentElement.parentElement);"></td>
                 </tr>
             </tbody>
         </table>
@@ -245,7 +257,10 @@
             let tbody = tr.parentNode;
             let adjust_usb = tbody.children[0].children[1].children[0].value;
             let adjust_bat = tbody.children[1].children[1].children[0].value;
-            let data = `adjust_usb=${adjust_usb}&adjust_bat=${adjust_bat}`;
+            let time_to_switch_city = tbody.children[2].children[1].children[0].value;
+            let time_to_sleep = tbody.children[3].children[1].children[0].value;
+            let time_to_wakeup = tbody.children[4].children[1].children[0].value;
+            let data = `adjust_usb=${adjust_usb}&adjust_bat=${adjust_bat}&time_to_switch_city=${time_to_switch_city}&time_to_sleep=${time_to_sleep}&time_to_wakeup=${time_to_wakeup}`;
 
             console.log(data);
             xhr.open("POST", "/store_adjusts", true);
@@ -269,6 +284,9 @@
                         let tbody = document.getElementsByTagName("tbody")[1];
                         tbody.children[0].children[1].children[0].value = json.adjust_usb;
                         tbody.children[1].children[1].children[0].value = json.adjust_bat;
+                        tbody.children[2].children[1].children[0].value = json.time_to_switch_city;
+                        tbody.children[3].children[1].children[0].value = json.time_to_sleep;
+                        tbody.children[4].children[1].children[0].value = json.time_to_wakeup;
                     }
                 }
             }
@@ -284,7 +302,7 @@
             let pp = document.querySelector(".config_pp");
             let rname = pp.querySelector(".city");
 
-            if (city == "Click here to add") {
+            if (city && city.includes("Click here to add")) {
                 rname.innerHTML = "New city";
                 document.querySelectorAll(".ent")[0].children[0].value = "";
                 document.querySelectorAll(".ent")[1].children[0].value = "";
@@ -355,7 +373,7 @@
                 trs.forEach(function(tr) {
                     tr.addEventListener("click", () => {
                         if (tr.children[1].innerHTML.startsWith('<input')) {
-                            storeAdjusts(tr);
+                            // storeAdjusts(tr);
                             return;
                         }
                         configPP(tr.children[0].innerHTML.trim().replaceAll("\n", ""),

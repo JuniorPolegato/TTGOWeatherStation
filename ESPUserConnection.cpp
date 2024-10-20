@@ -53,12 +53,14 @@ void user_request_data(AsyncWebServerRequest *request, bool restart=true) {
 }
 
 // Settings for your TFT device and/or Serial
-#define PRINT if (WiFi.status() != WL_CONNECTED) output->print
-#define PRINTLN if (WiFi.status() != WL_CONNECTED) output->println
 #ifdef OUTPUT_IS_TFT
+    #define PRINT(args) WiFi.status() != WL_CONNECTED ? output->print(args) : Serial.print(args)
+    #define PRINTLN(args) WiFi.status() != WL_CONNECTED ? output->println(args) : Serial.println(args)
     #include <TFT_eSPI.h>
     TFT_eSPI *output;
 #else
+    #define PRINT if (WiFi.status() != WL_CONNECTED) output->print
+    #define PRINTLN if (WiFi.status() != WL_CONNECTED) output->println
     #define output (&Serial)
     // Configure how to clear screen on your serial terminal
     // This line clear screen for https://github.com/JuniorPolegato/gtkterm
@@ -259,6 +261,8 @@ bool connect_wifi(bool force_ap_mode, bool show_connected_ip){
         return false;
     }
 
+    WiFi.hostname(PROJECT_NAME);
+
     known_wifis = readFile("/known_wifis.txt");
     while (WiFi.status() != WL_CONNECTED) {
         clear();
@@ -296,12 +300,12 @@ bool connect_wifi(bool force_ap_mode, bool show_connected_ip){
         output->println(WiFi.localIP());
     }
 
+    webserver.begin();
+
 #ifdef IP_ON_BLUETOOTH_NAME
     SerialBT.end();
     SerialBT.begin(IP_ON_BLUETOOTH_NAME + String(" ") + WiFi.localIP().toString());
 #endif
-
-    webserver.begin();
 
     return true;
 }
