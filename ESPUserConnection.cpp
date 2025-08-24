@@ -4,8 +4,10 @@
 #include "fs_operations.h"
 
 #ifdef IP_ON_BLUETOOTH_NAME
-    #include <BluetoothSerial.h>
-    BluetoothSerial SerialBT;
+    // #include <BluetoothSerial.h>
+    // BluetoothSerial SerialBT;
+    #include <BleKeyboard.h>
+    static BleKeyboard ble_keyboard;
 #endif
 
 AsyncWebServer webserver(80);
@@ -170,8 +172,12 @@ void start_AP() {
             "Waiting for you...\n");
 
 #ifdef IP_ON_BLUETOOTH_NAME
-    SerialBT.end();
-    SerialBT.begin(IP_ON_BLUETOOTH_NAME + String(" ") + ip.toString());
+    // SerialBT.end();
+    // SerialBT.begin(IP_ON_BLUETOOTH_NAME + String(" ") + ip.toString());
+    Serial.println("Starting BLE work!");
+    ble_keyboard.end();
+    ble_keyboard.setName("IP_ON_BLUETOOTH_NAME + String(" ") + ip.toString()");
+    ble_keyboard.begin();
 #endif
 
     delay(1000);
@@ -303,8 +309,12 @@ bool connect_wifi(bool force_ap_mode, bool show_connected_ip){
     webserver.begin();
 
 #ifdef IP_ON_BLUETOOTH_NAME
-    SerialBT.end();
-    SerialBT.begin(IP_ON_BLUETOOTH_NAME + String(" ") + WiFi.localIP().toString());
+    // SerialBT.end();
+    // SerialBT.begin(IP_ON_BLUETOOTH_NAME + String(" ") + WiFi.localIP().toString());
+    Serial.println("Starting BLE work!");
+    ble_keyboard.end();
+    ble_keyboard.setName("IP_ON_BLUETOOTH_NAME + String(" ") + ip.toString()");
+    ble_keyboard.begin();
 #endif
 
     return true;

@@ -25,7 +25,7 @@
 RTC_DATA_ATTR int bootCount = 0;
 RTC_DATA_ATTR int curCity = 0;
 RTC_DATA_ATTR int loopCount = 0;
-RTC_DATA_ATTR byte curBright = 1;
+RTC_DATA_ATTR byte curBright = 3;
 
 typedef struct {
     String city;
@@ -344,6 +344,274 @@ String get_vbat() {
     return String(battery_voltage) + "V";
 }
 
+void updateFooter(String extraInfo) {
+    String _footer = extraInfo + ipinfo_io;
+    int _length = _footer.length();
+    _footer += _footer.substring(0, 30);
+
+    if (footer) free(footer);
+    footer = (char*) malloc(_footer.length() + 1);
+
+    strcpy(footer, _footer.c_str());
+    footer_end = footer + _length ;
+    footer_pos = footer;
+}
+
+void setRtcTime(String date_string) {
+#ifdef USE_STRPTIME
+    struct tm t;
+    strptime(date_string.c_str(), "%a, %d %b %Y %H:%M:%S GMT", &t);
+    rtc.setTime(mktime(&t) + curTimezone);
+#else
+    int day, month, year, hours, minutes, seconds;
+    const char* c = date_string.c_str();
+    while (*c++ != ' '); c--; while (*c++ == ' '); c--; day = atoi(c);
+    while (*c++ != ' '); c--; while (*c++ == ' '); c--; month = numberOfMonth(c);
+    while (*c++ != ' '); c--; while (*c++ == ' '); c--; year = atoi(c);
+    while (*c++ != ' '); c--; while (*c++ == ' '); c--; hours = atoi(c);
+    while (*c++ != ':'); minutes = atoi(c);
+    while (*c++ != ':'); seconds = atoi(c);
+    rtc.setTime(seconds, minutes, hours, day, month, year);
+    rtc.setTime(rtc.getEpoch() + curTimezone);
+#endif // USE_STRPTIME
+}
+
+bool getData() {
+    String icon = "";
+    if (WiFi.status() == WL_CONNECTED) {  // Check the current connection status
+        HTTPClient http;
+        int httpCode;
+
+        String city(cities[curCity].city);
+        city.replace(" ", "%20");
+        String _endpoint = endpoint + city + "," + cities[curCity].country;
+        // Serial.println("[" + _endpoint + "]");
+        http.begin(_endpoint);
+        const char *headerKeys[] = {"Date"};
+        const size_t headerKeysCount = sizeof(headerKeys) / sizeof(headerKeys[0]);
+        http.collectHeaders(headerKeys, headerKeysCount);
+        httpCode = http.GET();  // Make the request
+
+        if (httpCode == 200) {  // Check for the returning code
+            String payload = http.getString();
+            JsonDocument doc;
+            deserializeJson(doc, payload);
+
+            String _lon = doc["coord"]["lon"];
+            String _lat = doc["coord"]["lat"];
+            String _description = doc["weather"][0]["description"];
+            String _icon = doc["weather"][0]["icon"];
+            String _temp = doc["main"]["temp"];
+            String _feels_like = doc["main"]["feels_like"];
+            String _temp_min = doc["main"]["temp_min"];
+            String _temp_max = doc["main"]["temp_max"];
+            String _pressure = doc["main"]["pressure"];
+            String _humidity = doc["main"]["humidity"];
+            String _visibility = doc["visibility"];
+            String _wind_speed = doc["wind"]["speed"];
+            String _wind_degree = doc["wind"]["deg"];
+            String _clouds = doc["clouds"]["all"];
+            String _dt_capture = doc["dt"];
+            String _sunrise = doc["sys"]["sunrise"];
+            String _sunset = doc["sys"]["sunset"];
+            String _timezone = doc["timezone"];
+
+            curTimezone = atoi(_timezone.c_str());
+            setRtcTime(http.header("Date"));
+
+            icon = _icon;
+
+            if (curTemperature != _temp) {
+                curTemperature = _temp;
+                tft.setFreeFont(&Orbitron_Medium_20);
+                tft.fillRect(0, 173, 89, 14, TFT_BLACK);
+                tft.setCursor(2, 187);
+                _temp = curTemperature.substring(0, 4);
+                if (_temp.length() == 4 and _temp[3] == '.') {
+                    if (_temp[0] == '-' and _temp[1] == '1')
+                        _temp = curTemperature.substring(0, 5);
+                    else
+                        _temp = curTemperature.substring(0, 3);
+                }
+                tft.println(_temp + "°C");
+
+                spr.pushImage(0, 0, 50, 50, icons[icons_map(_icon)]);
+            }
+
+            if (curHumidity != _humidity) {
+                curHumidity = _humidity;
+                tft.setFreeFont(&Orbitron_Medium_20);
+                tft.fillRect(0, 213, 89, 14, TFT_BLACK);
+                tft.setCursor(2, 227);
+                tft.println(curHumidity + "%");
+            }
+
+            char buffer[6];
+            time_t _time;
+
+            String _name = String("   ") + cities[curCity].city;
+
+            _time = atoi(_dt_capture.c_str()) + curTimezone;
+            strftime(buffer, 6, "%H:%M", gmtime(&_time));
+            _dt_capture = buffer;
+
+            _time = atoi(_sunrise.c_str()) + curTimezone;
+            strftime(buffer, 6, "%H:%M", gmtime(&_time));
+            _sunrise = buffer;
+
+            _time = atoi(_sunset.c_str()) + curTimezone;
+            strftime(buffer, 6, "%H:%M", gmtime(&_time));
+            _sunset = buffer;
+
+            updateFooter(_name + " weather: " + _description +
+                         _name + " feels like: " + _feels_like + "°C" +
+                         _name + " pressure: " + _pressure + "hPa" +
+                         _name + " location: " + _lon + "," + _lat +
+                         _name + " visibility: " + (atoi(_visibility.c_str()) / 1000.0) + "km" +
+                         _name + " wind speed: " + _wind_speed + "m/s" +
+                         _name + " wind degree: " + _wind_degree + "°" +
+                         _name + " clouds: " + _clouds + "%" +
+                         _name + " capture at: " + _dt_capture +
+                         _name + " sunrise: " + _sunrise +
+                         _name + " sunset: " + _sunset +
+                         "   Weather from https://openweathermap.org/");
+
+        }
+        else {
+            Serial.println("Error on\r\nHTTP OpenWeather\r\nrequest [" + String(httpCode) + "]");
+            return false;
+        }
+
+        http.end(); //Free the resources
+    }
+    else {
+        Serial.println("No internet connection!");
+        return false;
+    }
+
+    Serial.println("_____________________________________________________________\r\n");
+    Serial.println("City: [" + String(curCity) + "] " + cities[curCity].city + ", " + cities[curCity].country);
+    Serial.println("Date and time: " + rtc.getDateTime());
+    Serial.println("Temperature: " + curTemperature);
+    Serial.println("Humidity: " + curHumidity);
+    Serial.println("Icon: " + icon);
+    Serial.println("_____________________________________________________________\r\n");
+    switch_millis = millis();
+    Serial.print("Waiting " + String(time_to_switch_city) + " seconds...");
+    Serial.println("  |  About " + String(time_to_sleep - (millis() - sleep_millis) / 60000.) + " minutes to sleep...");
+    return true;
+}
+
+#ifndef USE_STRPTIME
+int numberOfMonth(const char* month) {
+    String m3 = String((char) tolower(*month)) + (char) tolower(month[1]) + (char) tolower(month[2]);
+    if (m3 == "jan") return 1;
+    if (m3 == "fer") return 2;
+    if (m3 == "mar") return 3;
+    if (m3 == "apr") return 4;
+    if (m3 == "may") return 5;
+    if (m3 == "jun") return 6;
+    if (m3 == "jul") return 7;
+    if (m3 == "aug") return 8;
+    if (m3 == "sep") return 9;
+    if (m3 == "oct") return 10;
+    if (m3 == "nov") return 11;
+    if (m3 == "dec") return 12;
+    return 0;
+}
+#endif // !USE_STRPTIME
+
+bool getLocalInfo() {
+    String icon = "";
+    if (WiFi.status() == WL_CONNECTED) {  // Check the current connection status
+        HTTPClient http;
+        int httpCode;
+
+        http.begin("http://ipinfo.io/");
+        http.addHeader("Accept", "application/json");
+        httpCode = http.GET();  // Make the request
+
+        if (httpCode == 200) {  // Check for the returning code
+            String payload = http.getString();
+            StaticJsonDocument<1000> doc;
+            deserializeJson(doc, payload.c_str());
+
+            String _ip = doc["ip"];
+            String _city = doc["city"];
+            String _region = doc["region"];
+            String _country = doc["country"];
+            String _loc = doc["loc"];
+            String _org = doc["org"];
+            String _postal = doc["postal"];
+            String _tz = doc["timezone"];
+
+            ipinfo_io = "   Wi-Fi IP: " + WiFi.localIP().toString() +
+                        "   Internet IP: " + _ip +
+                        "   Local city: " + _city +
+                        "   Local state: " + _region +
+                        "   Local country: " + _country +
+                        "   Local position: " + _loc +
+                        "   Local Postal: " + _postal +
+                        "   Local Timezone: " + _tz +
+                        "   Local from http://ipinfo.io/   ";
+        }
+        else {
+            Serial.println("Error on HTTP request [" + String(httpCode) + "]");
+            return false;
+        }
+
+        http.end(); //Free the resources
+    }
+    else {
+        Serial.println("No internet connection!");
+        return false;
+    }
+    return true;
+}
+
+void print_wakeup_reason() {
+    esp_sleep_wakeup_cause_t wakeup_reason;
+
+    Serial.println("Boot number: " + String(++bootCount));
+
+    wakeup_reason = esp_sleep_get_wakeup_cause();
+
+    switch(wakeup_reason) {
+        case ESP_SLEEP_WAKEUP_EXT0:
+            Serial.println("Wakeup caused by external signal using RTC_IO");
+            break;
+        case ESP_SLEEP_WAKEUP_EXT1:
+            Serial.println("Wakeup caused by external signal using RTC_CNTL");
+            break;
+        case ESP_SLEEP_WAKEUP_TIMER:
+            Serial.println("Wakeup caused by timer");
+            break;
+        case ESP_SLEEP_WAKEUP_TOUCHPAD:
+            Serial.println("Wakeup caused by touchpad");
+            break;
+        case ESP_SLEEP_WAKEUP_ULP:
+            Serial.println("Wakeup caused by ULP program");
+            break;
+        default:
+            Serial.println("Wakeup was not caused by deep sleep: " + String(wakeup_reason));
+            break;
+    }
+}
+
+void goto_sleep() {
+    Serial.println("I am going to sleep!");
+
+    if (time_to_wakeup > 0) {
+        Serial.println("I will wake up in " + String(time_to_wakeup) + " minutes...");
+        esp_sleep_enable_timer_wakeup(time_to_wakeup * 60000000);
+    }
+
+    Serial.println("Press right button to wake me up...");
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_35, 0);
+
+    esp_deep_sleep_start();
+}
+
 void setup(void) {
     Serial.begin(115200);
     while (!Serial);
@@ -501,7 +769,7 @@ void loop() {
         return;
     }
 
-    tft.pushImage(0, 88,  135, 65, animation[frame++]);
+    tft.pushImage(0, 88,  animation_width, animation_height, animation[frame++]);
     if (frame == frames) frame = 0;
 
     spr.pushSprite(x_spr, 95, 0x94b2);
@@ -616,272 +884,4 @@ void loop() {
         goto_sleep();
 
     delay(200);
-}
-
-bool getData() {
-    String icon = "";
-    if (WiFi.status() == WL_CONNECTED) {  // Check the current connection status
-        HTTPClient http;
-        int httpCode;
-
-        String city(cities[curCity].city);
-        city.replace(" ", "%20");
-        String _endpoint = endpoint + city + "," + cities[curCity].country;
-        // Serial.println("[" + _endpoint + "]");
-        http.begin(_endpoint);
-        const char *headerKeys[] = {"Date"};
-        const size_t headerKeysCount = sizeof(headerKeys) / sizeof(headerKeys[0]);
-        http.collectHeaders(headerKeys, headerKeysCount);
-        httpCode = http.GET();  // Make the request
-
-        if (httpCode == 200) {  // Check for the returning code
-            String payload = http.getString();
-            JsonDocument doc;
-            deserializeJson(doc, payload);
-
-            String _lon = doc["coord"]["lon"];
-            String _lat = doc["coord"]["lat"];
-            String _description = doc["weather"][0]["description"];
-            String _icon = doc["weather"][0]["icon"];
-            String _temp = doc["main"]["temp"];
-            String _feels_like = doc["main"]["feels_like"];
-            String _temp_min = doc["main"]["temp_min"];
-            String _temp_max = doc["main"]["temp_max"];
-            String _pressure = doc["main"]["pressure"];
-            String _humidity = doc["main"]["humidity"];
-            String _visibility = doc["visibility"];
-            String _wind_speed = doc["wind"]["speed"];
-            String _wind_degree = doc["wind"]["deg"];
-            String _clouds = doc["clouds"]["all"];
-            String _dt_capture = doc["dt"];
-            String _sunrise = doc["sys"]["sunrise"];
-            String _sunset = doc["sys"]["sunset"];
-            String _timezone = doc["timezone"];
-
-            curTimezone = atoi(_timezone.c_str());
-            setRtcTime(http.header("Date"));
-
-            icon = _icon;
-
-            if (curTemperature != _temp) {
-                curTemperature = _temp;
-                tft.setFreeFont(&Orbitron_Medium_20);
-                tft.fillRect(0, 173, 89, 14, TFT_BLACK);
-                tft.setCursor(2, 187);
-                _temp = curTemperature.substring(0, 4);
-                if (_temp.length() == 4 and _temp[3] == '.') {
-                    if (_temp[0] == '-' and _temp[1] == '1')
-                        _temp = curTemperature.substring(0, 5);
-                    else
-                        _temp = curTemperature.substring(0, 3);
-                }
-                tft.println(_temp + "°C");
-
-                spr.pushImage(0, 0, 50, 50, icons[icons_map(_icon)]);
-            }
-
-            if (curHumidity != _humidity) {
-                curHumidity = _humidity;
-                tft.setFreeFont(&Orbitron_Medium_20);
-                tft.fillRect(0, 213, 89, 14, TFT_BLACK);
-                tft.setCursor(2, 227);
-                tft.println(curHumidity + "%");
-            }
-
-            char buffer[6];
-            time_t _time;
-
-            String _name = String("   ") + cities[curCity].city;
-
-            _time = atoi(_dt_capture.c_str()) + curTimezone;
-            strftime(buffer, 6, "%H:%M", gmtime(&_time));
-            _dt_capture = buffer;
-
-            _time = atoi(_sunrise.c_str()) + curTimezone;
-            strftime(buffer, 6, "%H:%M", gmtime(&_time));
-            _sunrise = buffer;
-
-            _time = atoi(_sunset.c_str()) + curTimezone;
-            strftime(buffer, 6, "%H:%M", gmtime(&_time));
-            _sunset = buffer;
-
-            updateFooter(_name + " weather: " + _description +
-                         _name + " feels like: " + _feels_like + "°C" +
-                         _name + " pressure: " + _pressure + "hPa" +
-                         _name + " location: " + _lon + "," + _lat +
-                         _name + " visibility: " + (atoi(_visibility.c_str()) / 1000.0) + "km" +
-                         _name + " wind speed: " + _wind_speed + "m/s" +
-                         _name + " wind degree: " + _wind_degree + "°" +
-                         _name + " clouds: " + _clouds + "%" +
-                         _name + " capture at: " + _dt_capture +
-                         _name + " sunrise: " + _sunrise +
-                         _name + " sunset: " + _sunset +
-                         "   Weather from https://openweathermap.org/");
-
-        }
-        else {
-            Serial.println("Error on\r\nHTTP OpenWeather\r\nrequest [" + String(httpCode) + "]");
-            return false;
-        }
-
-        http.end(); //Free the resources
-    }
-    else {
-        Serial.println("No internet connection!");
-        return false;
-    }
-
-    Serial.println("_____________________________________________________________\r\n");
-    Serial.println("City: [" + String(curCity) + "] " + cities[curCity].city + ", " + cities[curCity].country);
-    Serial.println("Date and time: " + rtc.getDateTime());
-    Serial.println("Temperature: " + curTemperature);
-    Serial.println("Humidity: " + curHumidity);
-    Serial.println("Icon: " + icon);
-    Serial.println("_____________________________________________________________\r\n");
-    switch_millis = millis();
-    Serial.print("Waiting " + String(time_to_switch_city) + " seconds...");
-    Serial.println("  |  About " + String(time_to_sleep - (millis() - sleep_millis) / 60000.) + " minutes to sleep...");
-    return true;
-}
-
-#ifndef USE_STRPTIME
-int numberOfMonth(const char* month) {
-    String m3 = String((char) tolower(*month)) + (char) tolower(month[1]) + (char) tolower(month[2]);
-    if (m3 == "jan") return 1;
-    if (m3 == "fer") return 2;
-    if (m3 == "mar") return 3;
-    if (m3 == "apr") return 4;
-    if (m3 == "may") return 5;
-    if (m3 == "jun") return 6;
-    if (m3 == "jul") return 7;
-    if (m3 == "aug") return 8;
-    if (m3 == "sep") return 9;
-    if (m3 == "oct") return 10;
-    if (m3 == "nov") return 11;
-    if (m3 == "dec") return 12;
-    return 0;
-}
-#endif // !USE_STRPTIME
-
-void setRtcTime(String date_string) {
-#ifdef USE_STRPTIME
-    struct tm t;
-    strptime(date_string.c_str(), "%a, %d %b %Y %H:%M:%S GMT", &t);
-    rtc.setTime(mktime(&t) + curTimezone);
-#else
-    int day, month, year, hours, minutes, seconds;
-    const char* c = date_string.c_str();
-    while (*c++ != ' '); c--; while (*c++ == ' '); c--; day = atoi(c);
-    while (*c++ != ' '); c--; while (*c++ == ' '); c--; month = numberOfMonth(c);
-    while (*c++ != ' '); c--; while (*c++ == ' '); c--; year = atoi(c);
-    while (*c++ != ' '); c--; while (*c++ == ' '); c--; hours = atoi(c);
-    while (*c++ != ':'); minutes = atoi(c);
-    while (*c++ != ':'); seconds = atoi(c);
-    rtc.setTime(seconds, minutes, hours, day, month, year);
-    rtc.setTime(rtc.getEpoch() + curTimezone);
-#endif // USE_STRPTIME
-}
-
-bool getLocalInfo() {
-    String icon = "";
-    if (WiFi.status() == WL_CONNECTED) {  // Check the current connection status
-        HTTPClient http;
-        int httpCode;
-
-        http.begin("http://ipinfo.io/");
-        http.addHeader("Accept", "application/json");
-        httpCode = http.GET();  // Make the request
-
-        if (httpCode == 200) {  // Check for the returning code
-            String payload = http.getString();
-            StaticJsonDocument<1000> doc;
-            deserializeJson(doc, payload.c_str());
-
-            String _ip = doc["ip"];
-            String _city = doc["city"];
-            String _region = doc["region"];
-            String _country = doc["country"];
-            String _loc = doc["loc"];
-            String _org = doc["org"];
-            String _postal = doc["postal"];
-            String _tz = doc["timezone"];
-
-            ipinfo_io = "   Wi-Fi IP: " + WiFi.localIP().toString() +
-                        "   Internet IP: " + _ip +
-                        "   Local city: " + _city +
-                        "   Local state: " + _region +
-                        "   Local country: " + _country +
-                        "   Local position: " + _loc +
-                        "   Local Postal: " + _postal +
-                        "   Local Timezone: " + _tz +
-                        "   Local from http://ipinfo.io/   ";
-        }
-        else {
-            Serial.println("Error on HTTP request [" + String(httpCode) + "]");
-            return false;
-        }
-
-        http.end(); //Free the resources
-    }
-    else {
-        Serial.println("No internet connection!");
-        return false;
-    }
-    return true;
-}
-
-void updateFooter(String extraInfo) {
-    String _footer = extraInfo + ipinfo_io;
-    int _length = _footer.length();
-    _footer += _footer.substring(0, 30);
-
-    if (footer) free(footer);
-    footer = (char*) malloc(_footer.length() + 1);
-
-    strcpy(footer, _footer.c_str());
-    footer_end = footer + _length ;
-    footer_pos = footer;
-}
-
-void print_wakeup_reason() {
-    esp_sleep_wakeup_cause_t wakeup_reason;
-
-    Serial.println("Boot number: " + String(++bootCount));
-
-    wakeup_reason = esp_sleep_get_wakeup_cause();
-
-    switch(wakeup_reason) {
-        case ESP_SLEEP_WAKEUP_EXT0:
-            Serial.println("Wakeup caused by external signal using RTC_IO");
-            break;
-        case ESP_SLEEP_WAKEUP_EXT1:
-            Serial.println("Wakeup caused by external signal using RTC_CNTL");
-            break;
-        case ESP_SLEEP_WAKEUP_TIMER:
-            Serial.println("Wakeup caused by timer");
-            break;
-        case ESP_SLEEP_WAKEUP_TOUCHPAD:
-            Serial.println("Wakeup caused by touchpad");
-            break;
-        case ESP_SLEEP_WAKEUP_ULP:
-            Serial.println("Wakeup caused by ULP program");
-            break;
-        default:
-            Serial.println("Wakeup was not caused by deep sleep: " + String(wakeup_reason));
-            break;
-    }
-}
-
-void goto_sleep() {
-    Serial.println("I am going to sleep!");
-
-    if (time_to_wakeup > 0) {
-        Serial.println("I will wake up in " + String(time_to_wakeup) + " minutes...");
-        esp_sleep_enable_timer_wakeup(time_to_wakeup * 60000000);
-    }
-
-    Serial.println("Press right button to wake me up...");
-    esp_sleep_enable_ext0_wakeup(GPIO_NUM_35, 0);
-
-    esp_deep_sleep_start();
 }
