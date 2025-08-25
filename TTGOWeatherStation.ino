@@ -5,6 +5,8 @@
 #include <ESPAsyncWebServer.h>  // https://github.com/JuniorPolegato/ESPAsyncWebServer
 #include <pins_arduino.h>
 #include <esp_adc_cal.h>
+#include <esp_adc/adc_cali_scheme.h>
+#include <esp_adc/adc_oneshot.h>
 
 #include "ESPUserConnection.h"
 #include "fs_operations.h"
@@ -66,15 +68,18 @@ char* footer_pos;
 char* footer_end;
 char  footer_30;
 bool ap_mode = false;
+static adc_oneshot_unit_handle_t adc1_handle;
+static adc_cali_handle_t adc_cali;
+static float battery_voltage = 0.0;
 int vref = 1100;
 float full_scale = 3.3;
-float adjust_usb = 0.18;
-float adjust_bat = -0.14;
+float adjust_usb = 0.25;
+float adjust_bat = -0.01;
 uint32_t switch_millis = 0;
 uint32_t sleep_millis = 0;
-uint32_t time_to_switch_city = 5;  // 5 seconds default
-uint32_t time_to_sleep =  2;       // 2 minutes default
-uint32_t time_to_wakeup = 1;       // 1 minutes default
+uint32_t time_to_switch_city = 10;  // 10 seconds default
+uint32_t time_to_sleep =  5;        //  5 minutes default
+uint32_t time_to_wakeup = 3;        //  3 minutes default
 
 
 void load_adjusts() {
@@ -328,18 +333,57 @@ void cal_vref() {
     } else {
         Serial.printf("Default Vref: %umV\r\n", vref);
     }
+
+    adc_oneshot_unit_init_cfg_t init_config = {
+        .unit_id = ADC_UNIT_1,
+    };
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config, &adc1_handle));
+
+    adc_oneshot_chan_cfg_t config = {
+        .atten = ADC_ATTEN_DB_11, // Adjust attenuation as needed
+        .bitwidth = ADC_BITWIDTH_DEFAULT, // Adjust bitwidth as needed
+    };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_6, &config));
+
+    adc_cali_line_fitting_config_t cali_config = {
+        .unit_id = init_config.unit_id,
+        .atten = config.atten,
+        .bitwidth = config.bitwidth,
+    };
+    ESP_ERROR_CHECK(adc_cali_create_scheme_line_fitting(&cali_config, &adc_cali));
+
+    int raw_value;
+    ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL_6, &raw_value));
+    Serial.printf("Raw value: %d\n", raw_value);
+
+    int calibrated_voltage;
+    ESP_ERROR_CHECK(adc_oneshot_get_calibrated_result(adc1_handle, adc_cali, ADC_CHANNEL_6, &calibrated_voltage));
+    Serial.printf("Calibrated Voltage: %d mV\n", calibrated_voltage);
+
+    float current_voltage = calibrated_voltage * 2 / 1000.;
+    Serial.printf("Current Battery Voltage: %.3f V\n", current_voltage);
+
+    current_voltage += current_voltage > 4.5 ? adjust_usb : adjust_bat;
+    Serial.printf("Current Battery Voltage adjusted: %.3f V\n", current_voltage);
+
+    battery_voltage = current_voltage;
 }
 
 String get_vbat() {
     static unsigned long timeStamp = 0;
-    static float battery_voltage = 0.0;
 
     if (millis() - timeStamp > 1000) {
         timeStamp = millis();
-        uint16_t v = analogRead(VBAT);
-        float current_voltage = ((float)v / 4095.0) * 2.0 * full_scale * (vref / 1000.0);
+
+        int calibrated_voltage;
+        ESP_ERROR_CHECK(adc_oneshot_get_calibrated_result(adc1_handle, adc_cali, ADC_CHANNEL_6, &calibrated_voltage));
+        Serial.printf("Calibrated Voltage: %d mV\n", calibrated_voltage);
+
+        float current_voltage = calibrated_voltage * 2 / 1000.;
         current_voltage += current_voltage > 4.5 ? adjust_usb : adjust_bat;
-        battery_voltage = battery_voltage < 0.1 ? current_voltage : (battery_voltage * 9.0 + current_voltage) / 10.0;
+        battery_voltage = (battery_voltage * 9.0 + current_voltage) / 10.0;
+
+        Serial.printf("Current Voltage adjusted: %.3f V\n", current_voltage);
     }
     return String(battery_voltage) + "V";
 }
@@ -499,6 +543,7 @@ bool getData() {
     switch_millis = millis();
     Serial.print("Waiting " + String(time_to_switch_city) + " seconds...");
     Serial.println("  |  About " + String(time_to_sleep - (millis() - sleep_millis) / 60000.) + " minutes to sleep...");
+    Serial.println(footer);
     return true;
 }
 
@@ -837,7 +882,6 @@ void loop() {
     footer_30 = *(footer_pos + 30);
     *(footer_pos + 30) = '\0';
     tft.println(get_vbat() + " " + footer_pos);
-    // Serial.println(get_vbat() + " " + footer_pos);
     *(footer_pos + 30) = footer_30;
 
     String _date = rtc.getTime("%a, %d %b %Y ");
