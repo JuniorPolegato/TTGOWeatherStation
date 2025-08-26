@@ -695,6 +695,7 @@ void setup(void) {
     if (!connect_wifi(ap_mode)) {
 #endif  // OUTPUT_IS_TFT
         ap_mode = true;
+        append_to_webserver();
         return;
     }
 

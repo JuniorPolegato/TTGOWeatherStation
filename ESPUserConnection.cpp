@@ -158,6 +158,7 @@ void start_AP() {
 
     const char *ssid = PROJECT_NAME;
     const char *passwd = "12345678";
+    WiFi.mode(WIFI_AP);
     WiFi.softAP(ssid, passwd);
     IPAddress ip = WiFi.softAPIP();
     delay(1000);
@@ -267,6 +268,7 @@ bool connect_wifi(bool force_ap_mode, bool show_connected_ip){
         return false;
     }
 
+    WiFi.mode(WIFI_STA);
     WiFi.hostname(PROJECT_NAME);
 
     known_wifis = readFile("/known_wifis.txt");
