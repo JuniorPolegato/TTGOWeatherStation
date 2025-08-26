@@ -161,7 +161,6 @@ void start_AP() {
     WiFi.mode(WIFI_AP);
     WiFi.softAP(ssid, passwd);
     IPAddress ip = WiFi.softAPIP();
-    delay(1000);
 
     webserver.begin();
     PRINTLN("Then access:\n\n"
@@ -262,18 +261,17 @@ bool connect_wifi(bool force_ap_mode, bool show_connected_ip){
 
     if (force_ap_mode) {
         PRINTLN("Forcing AP Mode!\n");
-        WiFi.disconnect(false, true);
-        delay(1000);
         start_AP();
         return false;
     }
 
-    WiFi.mode(WIFI_STA);
     WiFi.hostname(PROJECT_NAME);
 
     known_wifis = readFile("/known_wifis.txt");
     while (WiFi.status() != WL_CONNECTED) {
         clear();
+        WiFi.mode(WIFI_AP);
+        WiFi.mode(WIFI_STA);
 
         d = known_wifis.indexOf('\t', i);
         wifi = known_wifis.substring(i, d);
@@ -283,8 +281,6 @@ bool connect_wifi(bool force_ap_mode, bool show_connected_ip){
 
         if (i == -1) {  // No known wi-fi found
             PRINTLN("\n\nNo known WiFi\n\nmatches in the\n\nneighborhood.\n");
-            WiFi.disconnect(false, true);
-            delay(1000);
             start_AP();
             return false;
         }
