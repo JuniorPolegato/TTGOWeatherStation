@@ -3,6 +3,13 @@
 
 #define PROJECT_NAME "TTGO Weather Station"
 
+// Uncomment the follow lines to request a autentication
+#define AUTHENTICATION_USERNAME "Junior"
+#define AUTHENTICATION_PASSWORD "Polegato"
+
+// Uncomment the follow line to permit OTA update
+#define OTA_UPDATE 1
+
 // Uncomment this if you use custom user_config.html to get extra user data.
 // You need to provide the function "custom_user_request_data(request)"
 // into ESPUserConnection.cpp (see exemple there), also is needed to create
@@ -88,6 +95,115 @@ const char go_back_html[] PROGMEM = R"===(
 </html>
 )===";
 #endif  // CUSTOM_USER_REQUEST_DATA
+
+#ifdef OTA_UPDATE  // https://lastminuteengineers.com/esp32-ota-web-updater-arduino-ide/
+const char ota_index_html[] PROGMEM = R"===(
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTGO Weather Station - by Junior Polegato</title>
+    <script src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js'></script>
+    <style>
+        #file-input,input {
+            width: 100%;
+            height: 44px;
+            border-radius: 4px;
+            margin: 10px auto;
+            font-size: 15px
+        }
+        input {
+            background: #f1f1f1;
+            border: 0;
+            padding: 0 15px;
+        }
+        body {
+            background: #3498db;
+            font-family: sans-serif;
+            font-size: 14px;
+            color: #777;
+        }
+        #file-input {
+            padding: 0;
+            border: 1px solid #ddd;
+            line-height: 44px;
+            text-align: left;
+            display: block;
+            cursor: pointer;
+        }
+        #bar, #prgbar {
+            background-color: #f1f1f1;
+            border-radius: 10px;
+        }
+        #bar {
+            background-color: #3498db;
+            width: 0%;
+            height: 10px;
+        }
+        form {
+            background: #fff;
+            max-width: 50%;
+            margin: 75px auto;
+            padding: 30px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .btn {
+            background: darkgreen; /* #3498db */
+            color: yellow; /* #fff */
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>
+        <input type='file' name='update' id='file' onchange='sub(this)' style=display:none>
+        <label id='file-input' for='file'>&nbsp; &nbsp; Choose file...</label>
+        <input type='submit' class=btn value='Update'>
+        <br><br>
+        <div id='prg'></div>
+        <br><div id='prgbar'><div id='bar'>
+        </div></div><br>
+    </form>
+    <script>
+        function sub(obj){
+            var fileName = obj.value.split('\\');
+            document.getElementById('file-input').innerHTML = '&nbsp; &nbsp; '+ fileName[fileName.length-1];
+        };
+        $('form').submit(function(e){
+            e.preventDefault();
+            var form = $('#upload_form')[0];
+            var data = new FormData(form);
+            $.ajax({
+                url: '/update',
+                type: 'POST',
+                data: data,
+                contentType: false,
+                processData:false,
+                xhr: function() {
+                    var xhr = new window.XMLHttpRequest();
+                    xhr.upload.addEventListener('progress', function(evt) {
+                        if (evt.lengthComputable) {
+                            var per = evt.loaded / evt.total;
+                            $('#prg').html('progress: ' + Math.round(per*100) + '%');
+                            $('#bar').css('width',Math.round(per*100) + '%');
+                        }
+                    }, false);
+                    return xhr;
+                },
+                success:function(d, s) {
+                    console.log('success!')
+                },
+                error: function (a, b, c) {
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+)===";
+#endif // OTA_UPDATE
 
 #ifdef OUTPUT_IS_TFT
 bool connect_wifi(void *tft, bool force_ap_mode=false, bool show_connected_ip=true);

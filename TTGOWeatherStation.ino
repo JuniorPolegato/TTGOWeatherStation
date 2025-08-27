@@ -2,7 +2,8 @@
 #include <ESP32Time.h>       // replace #include <NTPClient.h>  // https://github.com/taranais/NTPClient
 #include <HTTPClient.h>
 #include <ArduinoJson.h>     // https://github.com/bblanchon/ArduinoJson.git
-#include <ESPAsyncWebServer.h>  // https://github.com/JuniorPolegato/ESPAsyncWebServer
+#include <ESPAsyncWebServer.h>
+#include <WiFi.h>
 #include <pins_arduino.h>
 #include <esp_adc_cal.h>
 #include <esp_adc/adc_cali_scheme.h>
@@ -91,13 +92,22 @@ void load_adjusts() {
         Serial.println("Ok");
         JsonDocument doc;
         deserializeJson(doc, file_data);
-        if (!doc["adjust_usb"].isNull()) adjust_usb = doc["adjust_usb"];
-        if (!doc["adjust_bat"].isNull()) adjust_bat = doc["adjust_bat"];
-        if (!doc["time_to_switch_city"].isNull()) time_to_switch_city = doc["time_to_switch_city"];
-        if (!doc["time_to_sleep"].isNull()) time_to_sleep = doc["time_to_sleep"];
-        if (!doc["time_to_wakeup"].isNull()) time_to_wakeup = doc["time_to_wakeup"];
+        if (!doc["adjust_usb"].isNull()) {
+            adjust_usb = doc["adjust_usb"];
+        }
+        if (!doc["adjust_bat"].isNull()) {
+            adjust_bat = doc["adjust_bat"];
+        }
+        if (!doc["time_to_switch_city"].isNull()) {
+            time_to_switch_city = doc["time_to_switch_city"];
+        }
+        if (!doc["time_to_sleep"].isNull()) {
+            time_to_sleep = doc["time_to_sleep"];
+        }
+        if (!doc["time_to_wakeup"].isNull()) {
+            time_to_wakeup = doc["time_to_wakeup"];
+        }
     }
-
     else {
         Serial.println("Failed");
         Serial.println(file_data);
@@ -120,28 +130,36 @@ void load_cities() {
     int i, d;
 
     String file_data = readFile("/cities.txt");
-    if (file_data.length() < 6)
+    if (file_data.length() < 6) {
         file_data = "Ribeirão Preto\tBR\n";
-    else if (!file_data.endsWith("\n"))
+    }
+    else if (!file_data.endsWith("\n")) {
         file_data += '\n';
+    }
 
     qtd_cities = 0;
     i = 0;
-    while ((i = file_data.indexOf('\n', ++i)) != -1)
+    while ((i = file_data.indexOf('\n', ++i)) != -1) {
         qtd_cities++;
+    }
 
-    if (cities)
+    if (cities) {
         free(cities);
+    }
     cities = (Cities*)calloc(qtd_cities, sizeof(Cities));
 
     Cities *c = cities;
     i = 0;
     for (;;) {
         d = file_data.indexOf('\t', i);
-        if (d == -1) break;
+        if (d == -1) {
+            break;
+        }
         c->city = file_data.substring(i, d++);
         i = file_data.indexOf('\n', d);
-        if (i == -1) break;
+        if (i == -1) {
+            break;
+        }
         c->country = file_data.substring(i++, d);
         Serial.println(c->city + " - " + c->country);
         c++;
@@ -150,14 +168,16 @@ void load_cities() {
 
 void update_city(bool swap = true, bool ip=false) {
     String text;
-    if (swap && !ip && ++curCity == qtd_cities)
+    if (swap && !ip && ++curCity == qtd_cities) {
         curCity = 0;
+    }
     tft.fillRect(0, 60, 135, 27, TFT_BLACK);
     tft.setCursor(6, 82);
     tft.setFreeFont(&Orbitron_Medium_20);
     text = ip && !swap ? WiFi.localIP().toString() : cities[curCity].city;
-    if (tft.textWidth(text) > tft.width() - 12)
+    if (tft.textWidth(text) > tft.width() - 12) {
         tft.setFreeFont(&Orbitron_Bold_14);
+    }
     tft.println(text);
     loopCount += ip ? 0 : 3000;  // force to getData for current city
 }
@@ -173,16 +193,19 @@ void custom_user_request_data(AsyncWebServerRequest *request) {
     if (params >= 3) {
         String key = request->getParam(2U)->value();
 
-        if (key.length() == 32)
+        if (key.length() == 32) {
             writeFile("/key.txt", key, false, true);
+        }
 
-        else if (key == "delete")
+        else if (key == "delete") {
             deleteFile("/key.txt");
+        }
 
         user_request_data(request);
     }
-    else
+    else {
         request->send(500);
+    }
 }
 
 void append_to_webserver() {
@@ -212,17 +235,20 @@ void append_to_webserver() {
             serializeJson(doc, file_data);
 
             renameFile("/adjusts.txt", "/adjusts.txt.bak");
-            if (writeFile("/adjusts.txt", file_data, false, true))
+            if (writeFile("/adjusts.txt", file_data, false, true)) {
                 deleteFile("/adjusts.txt.bak");
-            else
+            }
+            else {
                 renameFile("/adjusts.txt.bak", "/adjusts.txt");
+            }
 
             request->send(200, "text/html", go_back_html);
 
             load_adjusts();
         }
-        else
+        else {
             request->send(500);
+        }
     });
 
     webserver.on("/list_cities", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -236,10 +262,14 @@ void append_to_webserver() {
 
         for (int n = 1; ; n++) {
             d = file_data.indexOf('\t', i);
-            if (d == -1) break;
+            if (d == -1) {
+                break;
+            }
             city = file_data.substring(i, d++);
             i = file_data.indexOf('\n', d);
-            if (i == -1) break;
+            if (i == -1) {
+                break;
+            }
             country = file_data.substring(d, i++);
             doc[n]["city"] = city;
             doc[n]["country"] = country;
@@ -268,24 +298,29 @@ void append_to_webserver() {
 
             String line = city + '\t' + country + '\n';
             i = file_data.indexOf(line);
-            if (i > -1)  // delete the line
+            if (i > -1) { // delete the line
                 file_data = file_data.substring(0, i) + file_data.substring(i + line.length());
+            }
 
-            if (operation == "add")
+            if (operation == "add") {
                 file_data = line + file_data;
+            }
 
-            if (writeFile("/cities.txt", file_data, false, true))
+            if (writeFile("/cities.txt", file_data, false, true)) {
                 deleteFile("/cities.txt.bak");
-            else
+            }
+            else {
                 renameFile("/cities.txt.bak", "/cities.txt");
+            }
 
             request->send(200, "text/html", go_back_html);
 
             load_cities();
             update_city(false);
         }
-        else
+        else {
             request->send(500);
+        }
     });
 
     webserver.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -393,7 +428,9 @@ void updateFooter(String extraInfo) {
     int _length = _footer.length();
     _footer += _footer.substring(0, 30);
 
-    if (footer) free(footer);
+    if (footer) {
+        free(footer);
+    }
     footer = (char*) malloc(_footer.length() + 1);
 
     strcpy(footer, _footer.c_str());
@@ -472,10 +509,12 @@ bool getData() {
                 tft.setCursor(2, 187);
                 _temp = curTemperature.substring(0, 4);
                 if (_temp.length() == 4 and _temp[3] == '.') {
-                    if (_temp[0] == '-' and _temp[1] == '1')
+                    if (_temp[0] == '-' and _temp[1] == '1') {
                         _temp = curTemperature.substring(0, 5);
-                    else
+                    }
+                    else {
                         _temp = curTemperature.substring(0, 3);
+                    }
                 }
                 tft.println(_temp + "°C");
 
@@ -550,18 +589,42 @@ bool getData() {
 #ifndef USE_STRPTIME
 int numberOfMonth(const char* month) {
     String m3 = String((char) tolower(*month)) + (char) tolower(month[1]) + (char) tolower(month[2]);
-    if (m3 == "jan") return 1;
-    if (m3 == "fer") return 2;
-    if (m3 == "mar") return 3;
-    if (m3 == "apr") return 4;
-    if (m3 == "may") return 5;
-    if (m3 == "jun") return 6;
-    if (m3 == "jul") return 7;
-    if (m3 == "aug") return 8;
-    if (m3 == "sep") return 9;
-    if (m3 == "oct") return 10;
-    if (m3 == "nov") return 11;
-    if (m3 == "dec") return 12;
+    if (m3 == "jan") {
+        return 1;
+    }
+    if (m3 == "fer") {
+        return 2;
+    }
+    if (m3 == "mar") {
+        return 3;
+    }
+    if (m3 == "apr") {
+        return 4;
+    }
+    if (m3 == "may") {
+        return 5;
+    }
+    if (m3 == "jun") {
+        return 6;
+    }
+    if (m3 == "jul") {
+        return 7;
+    }
+    if (m3 == "aug") {
+        return 8;
+    }
+    if (m3 == "sep") {
+        return 9;
+    }
+    if (m3 == "oct") {
+        return 10;
+    }
+    if (m3 == "nov") {
+        return 11;
+    }
+    if (m3 == "dec") {
+        return 12;
+    }
     return 0;
 }
 #endif // !USE_STRPTIME
@@ -733,8 +796,9 @@ void setup(void) {
     tft.setFreeFont(&Orbitron_Medium_20);
 
     load_cities();
-    if (tft.textWidth(cities[curCity].city) > tft.width() - 12)
+    if (tft.textWidth(cities[curCity].city) > tft.width() - 12) {
         tft.setFreeFont(&Orbitron_Bold_14);
+    }
     tft.println(cities[curCity].city);
 
     for(int i = 0; i <= curBright; i++)
@@ -748,16 +812,22 @@ void setup(void) {
     for (;;) {
         api_error.clear();
 
-        if (!getLocalInfo())
+        if (!getLocalInfo()) {
             api_error = "IP Info";
+        }
 
-        if (!getData())
-            if (api_error.length())
+        if (!getData()) {
+            if (api_error.length()) {
                 api_error += "\nOpen Weather";
-            else
+            }
+            else {
                 api_error = "Open Weather";
+            }
+        }
 
-        if (!api_error.length()) break;
+        if (!api_error.length()) {
+            break;
+        }
 
         key.clear();
         tft.fillRect(0, 0, tft.getViewportWidth(), tft.getViewportHeight(), TFT_DARKRED);
@@ -784,8 +854,9 @@ void setup(void) {
             delay(1000);
         }
     }
-    if (!key.length())
+    if (!key.length()) {
         setup();
+    }
 
     switch_millis = millis();
     sleep_millis = switch_millis;
@@ -816,17 +887,24 @@ void loop() {
     }
 
     tft.pushImage(0, 88,  animation_width, animation_height, animation[frame++]);
-    if (frame == frames) frame = 0;
+    if (frame == frames) {
+        frame = 0;
+    }
 
     spr.pushSprite(x_spr, 95, 0x94b2);
     x_spr += dir_spr;
-    if (x_spr == 85) dir_spr = -1;
-    else if (x_spr == 0) dir_spr = 1;
+    if (x_spr == 85) {
+        dir_spr = -1;
+    }
+    else if (x_spr == 0) {
+        dir_spr = 1;
+    }
 
     if (digitalRead(RIGHT_BUTTON) == 0) {
         sleep_millis = millis();
-        if (press2 < 5)
+        if (press2 < 5) {
             press2++;
+        }
         else if (press2 == 5) {  // turn off back light of TFT
             press2++;
 #if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
@@ -839,7 +917,9 @@ void loop() {
     else if (press2 > 0) {
         if (press2 < 5) {
             tft.fillRect(93, 216, 44, 12, TFT_BLACK);
-            if(++curBright == 5) curBright = 0;
+            if(++curBright == 5) {
+                curBright = 0;
+            }
             for(int i = 0; i <= curBright; i++)
                 tft.fillRect(93 + (i * 7), 216, 3, 10, TFT_BLUE);
 #if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
@@ -848,38 +928,44 @@ void loop() {
             ledcWrite(TFT_BL, backlight[curBright]);
 #endif
         }
-        else
+        else {
             goto_sleep();
+        }
         press2 = 0;
     }
 
     if (digitalRead(LEFT_BUTTON) == 0) {
         sleep_millis = millis();
-        if (press1 < 5)
+        if (press1 < 5) {
             press1++;
+        }
         else if (press1 == 5) {
             update_city(false, true);  // show IP
             press1++;
         }
     }
     else if (press1 > 0) {
-        if (press1 < 5)
+        if (press1 < 5) {
             update_city();  // swap city
-        else
+        }
+        else {
             update_city(true, true);  // swap IP by city
+        }
         press1 = 0;
     }
 
     if (++loopCount > 3000) {  /// about 5 minutes
-        while (!getData())
+        while (!getData()) {
             delay(1000);
+        }
         loopCount = 0;
     }
 
     tft.setCursor(2, 232, 1);
     footer_pos += *footer_pos > 127;
-    if (++footer_pos == footer_end)
+    if (++footer_pos == footer_end) {
         footer_pos = footer;
+    }
     footer_30 = *(footer_pos + 30);
     *(footer_pos + 30) = '\0';
     tft.println(get_vbat() + " " + footer_pos);
@@ -922,11 +1008,13 @@ void loop() {
         tft.println(curSeconds);
     }
 
-    if (time_to_switch_city > 0 && millis() - switch_millis > time_to_switch_city * 1000)
+    if (time_to_switch_city > 0 && millis() - switch_millis > time_to_switch_city * 1000) {
         update_city();
+    }
 
-    if (time_to_sleep > 0 && millis() - sleep_millis > time_to_sleep * 60000)
+    if (time_to_sleep > 0 && millis() - sleep_millis > time_to_sleep * 60000) {
         goto_sleep();
+    }
 
     delay(200);
 }

@@ -1,4 +1,5 @@
-#include <ESPAsyncWebServer.h>  // https://github.com/JuniorPolegato/ESPAsyncWebServer
+#include <ESPAsyncWebServer.h>  // https://github.com/ESP32Async/ESPAsyncWebServer and https://github.com/ESP32Async/AsyncTCP
+#include <WiFi.h>
 
 #include "ESPUserConnection.h"
 #include "fs_operations.h"
@@ -13,6 +14,10 @@
 AsyncWebServer webserver(80);
 bool webserver_configured = false;
 size_t total_size = 0;
+
+#ifdef OTA_UPDATE
+#include <Update.h>
+#endif // OTA_UPDATE
 
 // This is an example to request also a key to the user via html page
 #ifdef CUSTOM_USER_REQUEST_DATA
@@ -37,21 +42,27 @@ void user_request_data(AsyncWebServerRequest *request, bool restart=true) {
                             file_data.substring(0, i) +
                             (n == -1 ? String() : file_data.substring(n + 1));
             }
-            else if (passwd != "delete")
+            else if (passwd != "delete") {
                 file_data = ssid + '\t' + passwd + '\n' + file_data;
+            }
 
-            if (writeFile("/known_wifis.txt", file_data, true))
+            if (writeFile("/known_wifis.txt", file_data, true)) {
                 deleteFile("/known_wifis.txt.bak");
-            else
+            }
+            else {
                 renameFile("/known_wifis.txt.bak", "/known_wifis.txt");
+            }
         }
 
         request->send(200, "text/html", go_back_html);
 
-        if (restart) ESP.restart();
+        if (restart) {
+            ESP.restart();
+        }
     }
-    else
+    else {
         request->send(500);
+    }
 }
 
 // Settings for your TFT device and/or Serial
@@ -116,7 +127,9 @@ String scan(){
                 "\"name\":\"" + WiFi.SSID(i) + "\","
                 "\"quality\":" + WiFi.RSSI(i) + ","
                 "\"security\":" + WiFi.encryptionType(i) + "}";
-        if (i < 20) PRINTLN(WiFi.SSID(i) + '[' + WiFi.RSSI(i) + ']');
+        if (i < 20) {
+            PRINTLN(WiFi.SSID(i) + '[' + WiFi.RSSI(i) + ']');
+        }
     }
 
     WiFi.scanDelete();
@@ -127,8 +140,9 @@ String scan(){
 void upload_handler(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     if (!index) {
         String filepath = filename;
-        if (!filename.startsWith("/"))
+        if (!filename.startsWith("/")) {
             filepath = '/' + filename;
+        }
 
         request->_tempFile = LittleFS.open(filepath, FILE_WRITE);
 
@@ -148,6 +162,38 @@ void upload_handler(AsyncWebServerRequest *request, String filename, size_t inde
         total_size = 0;
     }
 }
+
+#ifdef OTA_UPDATE
+
+void ota_handler(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+        if (!index) {
+            PRINTLN("Update: " + filename);
+            if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { //start with max available size
+                PRINTLN(Update.errorString());
+            }
+        }
+
+        if (len) {
+            total_size += len;
+            PRINTLN(filename + '\n' + len + ' ' + total_size);
+            /* flashing firmware to ESP*/
+            if (Update.write(data, len) != len) {
+                PRINTLN(Update.errorString());
+            }
+        }
+
+        if (final) {
+            if (Update.end(true)) { //true to set the size to the current progress
+                PRINTLN(String("Update Success: ") + total_size + "\nRebooting...\n");
+            }
+            else {
+                PRINTLN(Update.errorString());
+            }
+            total_size = 0;
+        }
+}
+
+#endif // OTA_UPDATE
 
 void start_AP() {
     clear();
@@ -186,8 +232,16 @@ void start_AP() {
 void config_webserver() {
     webserver.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         clear();
-        if (findFile("/index.html"))
+
+        #ifdef AUTHENTICATION_USERNAME
+            if(!request->authenticate(AUTHENTICATION_USERNAME, AUTHENTICATION_PASSWORD)) {
+                return request->requestAuthentication();
+            }
+        #endif // AUTHENTICATION_USERNAME
+
+        if (findFile("/index.html")) {
             request->send(LittleFS, "/index.html", "text/html");
+        }
         else {
             PRINTLN("Please, send the\nHTML files!\n");
             request->send(200, "text/html", sendfiles_html);
@@ -195,11 +249,21 @@ void config_webserver() {
     });
 
     webserver.on("/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+        #ifdef AUTHENTICATION_USERNAME
+            if(!request->authenticate(AUTHENTICATION_USERNAME, AUTHENTICATION_PASSWORD)) {
+                return request->requestAuthentication();
+            }
+        #endif // AUTHENTICATION_USERNAME
         WiFi.scanNetworks(true);
         request->send(200, "application/json", scan());
     });
 
     webserver.on("/wifi", HTTP_GET, [](AsyncWebServerRequest *request) {
+        #ifdef AUTHENTICATION_USERNAME
+            if(!request->authenticate(AUTHENTICATION_USERNAME, AUTHENTICATION_PASSWORD)) {
+                return request->requestAuthentication();
+            }
+        #endif // AUTHENTICATION_USERNAME
 #ifdef CUSTOM_USER_REQUEST_DATA
         String user_config = "/custom_user_config.html";
 #else
@@ -222,6 +286,11 @@ void config_webserver() {
     });
 
     webserver.on("/wifi", HTTP_POST, [](AsyncWebServerRequest *request) {
+        #ifdef AUTHENTICATION_USERNAME
+            if(!request->authenticate(AUTHENTICATION_USERNAME, AUTHENTICATION_PASSWORD)) {
+                return request->requestAuthentication();
+            }
+        #endif // AUTHENTICATION_USERNAME
 #ifdef CUSTOM_USER_REQUEST_DATA
         custom_user_request_data(request);
 #else
@@ -230,14 +299,53 @@ void config_webserver() {
     });
 
     webserver.on("/send_file", HTTP_GET, [](AsyncWebServerRequest *request) {
+        #ifdef AUTHENTICATION_USERNAME
+            if(!request->authenticate(AUTHENTICATION_USERNAME, AUTHENTICATION_PASSWORD)) {
+                return request->requestAuthentication();
+            }
+        #endif // AUTHENTICATION_USERNAME
         request->send(200, "text/html", sendfiles_html);
         PRINTLN("Ready to send a file!");
     });
 
     webserver.on("/send_file", HTTP_POST, [](AsyncWebServerRequest *request) {
+        #ifdef AUTHENTICATION_USERNAME
+            if(!request->authenticate(AUTHENTICATION_USERNAME, AUTHENTICATION_PASSWORD)) {
+                return request->requestAuthentication();
+            }
+        #endif // AUTHENTICATION_USERNAME
         PRINTLN("\nReady to send a file again!");
         request->send(200, "text/html", sendfiles_html);
     }, upload_handler);
+
+    #ifdef OTA_UPDATE
+
+    webserver.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
+        #ifdef AUTHENTICATION_USERNAME
+            if(!request->authenticate(AUTHENTICATION_USERNAME, AUTHENTICATION_PASSWORD)) {
+                return request->requestAuthentication();
+            }
+        #endif // AUTHENTICATION_USERNAME
+        PRINTLN("OOOOOOOOOO TTTTTTTTTT AAAAAAAAAA");
+        request->send(200, "text/html", ota_index_html);
+    });
+
+    webserver.on("/update", HTTP_POST, [](AsyncWebServerRequest *request) {
+        #ifdef AUTHENTICATION_USERNAME
+            if(!request->authenticate(AUTHENTICATION_USERNAME, AUTHENTICATION_PASSWORD)) {
+                return request->requestAuthentication();
+            }
+        #endif // AUTHENTICATION_USERNAME
+        PRINTLN("OOOOOOOOOO TTTTTTTTTT AAAAAAAAAA");
+        PRINTLN((Update.hasError()) ? "FAIL" : "OK");
+        PRINTLN("OOOOOOOOOO TTTTTTTTTT AAAAAAAAAA");
+        request->send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+        if (!Update.hasError()) {
+            ESP.restart();
+        }
+    }, ota_handler);
+
+    #endif // OTA_UPDATE
 
     // Here you can add your custom endpoints
 
@@ -254,10 +362,12 @@ bool connect_wifi(bool force_ap_mode, bool show_connected_ip){
     String wifi, passwd, known_wifis;
     int i = 0, d;  // i = inital line position | d = position of delimiter \t
 
-    if (webserver_configured)
+    if (webserver_configured) {
         webserver.end();
-    else
+    }
+    else {
         config_webserver();
+    }
 
     if (force_ap_mode) {
         PRINTLN("Forcing AP Mode!\n");
